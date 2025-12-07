@@ -247,12 +247,6 @@ class TelegraphPublisher(IPublisher):
                 chunks.append("".join(current_chunk))
         else:
             chunks = [content]
-        
-        # Enforce page limit
-        if len(chunks) > MAX_PAGES:
-            original_count = len(chunks)
-            chunks = chunks[:MAX_PAGES]
-            print(f"Warning: Content truncated from {original_count} to {MAX_PAGES} pages (max limit).")
 
         total_parts = len(chunks)
         pages_info = []
@@ -373,11 +367,6 @@ class TelegraphPublisher(IPublisher):
             if not images:
                 raise ValidationError("No images found in zip file")
             
-            # Enforce image limit
-            if len(images) > MAX_TOTAL_IMAGES:
-                print(f"Warning: Gallery truncated from {len(images)} to {MAX_TOTAL_IMAGES} images (max limit).")
-                images = images[:MAX_TOTAL_IMAGES]
-            
             # Pagination logic
             chunk_size = MAX_IMAGES_PER_PAGE
             chunks = [images[i:i + chunk_size] for i in range(0, len(images), chunk_size)]
@@ -437,11 +426,6 @@ class TelegraphPublisher(IPublisher):
         """
         if not image_urls:
             raise ValidationError("No image URLs provided")
-            
-        # Enforce image limit
-        if len(image_urls) > MAX_TOTAL_IMAGES:
-            print(f"Warning: Gallery truncated from {len(image_urls)} to {MAX_TOTAL_IMAGES} images (max limit).")
-            image_urls = image_urls[:MAX_TOTAL_IMAGES]
         
         # Pagination logic
         chunk_size = MAX_IMAGES_PER_PAGE

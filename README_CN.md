@@ -51,56 +51,32 @@ Zip 文件当图集处理。图片按文件名自然排序（1, 2, 10 而不是 
 
 ## 特性
 
-- **自动压缩**: 超过 5MB 的图片自动压缩（JPEG/WebP）
-- **批量上传**: 多线程并发上传，带进度回调
-- **断点续传**: 指数退避重试，可恢复失败的上传
 - **去重**: 相同内容不会重复上传（缓存在 `~/.telepress_cache.json`）
+- **自动分页**: 大内容自动分割成多个链接页面
 - **保留段落**: 纯文本的换行会变成段落
+- **图片压缩**: 压缩图片到 5MB 以下（工具函数）
 
 ## 限制
 
-- 单张图片 5MB（超过自动压缩）
 - 每页 100 张图（浏览器性能考虑）
+- **注意**: Telegraph 图片上传 API 目前不可用。请使用外部图床（imgbb.com、imgur.com）然后粘贴 URL。
 
-支持: `.txt` `.md` `.markdown` `.rst` `.jpg` `.jpeg` `.png` `.gif` `.webp` `.bmp` `.tiff` `.zip`
+支持: `.txt` `.md` `.markdown` `.rst` `.zip`（配合图片 URL）
 
 不支持: PDF、DOCX（先转成文本或图片）
 
-## 批量上传
-
-```python
-from telepress import ImageUploader
-
-uploader = ImageUploader(max_workers=4)
-
-# 带进度回调的上传
-def on_progress(done, total, result):
-    status = "成功" if result.success else result.error
-    print(f"[{done}/{total}] {result.path}: {status}")
-
-results = uploader.upload_batch(
-    image_paths,
-    auto_compress=True,
-    progress_callback=on_progress
-)
-print(f"成功率: {results.success_rate:.0%}")
-
-# 重试失败的上传
-if results.failed > 0:
-    retry_results = uploader.retry_failed(results)
-```
-
-## 图片压缩
+## 图片压缩（工具函数）
 
 ```python
 from telepress import compress_image_to_size, MAX_IMAGE_SIZE
 
-# 压缩到 5MB 以下
+# 压缩图片到 5MB 以下（配合外部图床使用）
 compressed_path, was_compressed = compress_image_to_size(
     "large_photo.png",
     max_size=MAX_IMAGE_SIZE,  # 5MB
     prefer_webp=False  # 输出 JPEG（True 则输出 WebP）
 )
+# 然后上传到 imgbb.com 或 imgur.com，在文章中使用 URL
 ```
 
 支持格式: JPEG, PNG, WebP, BMP, TIFF（GIF 因动画复杂暂不支持压缩）

@@ -51,56 +51,32 @@ Token is auto-created on first run and saved to `~/.telegraph_token`.
 
 ## Features
 
-- **Auto compression**: Images over 5MB are automatically compressed (JPEG/WebP)
-- **Batch upload**: Multi-threaded concurrent uploads with progress callback
-- **Retry & resume**: Exponential backoff retry, resume failed uploads
 - **Deduplication**: Same content won't be uploaded twice (cache in `~/.telepress_cache.json`)
+- **Auto-pagination**: Large content split into multiple linked pages
 - **Paragraph preservation**: Plain text line breaks become paragraphs
+- **Image compression**: Compress images to under 5MB (utility function)
 
 ## Limits
 
-- 5MB per image (auto-compressed if larger)
 - 100 images per page (for browser performance)
+- **Note**: Telegraph's image upload API is currently unavailable. Use external image hosting (imgbb.com, imgur.com) and paste URLs.
 
-Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.jpeg` `.png` `.gif` `.webp` `.bmp` `.tiff` `.zip`
+Supported: `.txt` `.md` `.markdown` `.rst` `.zip` (with image URLs)
 
 Not supported: PDF, DOCX (convert first)
 
-## Batch Upload
-
-```python
-from telepress import ImageUploader
-
-uploader = ImageUploader(max_workers=4)
-
-# Upload with progress
-def on_progress(done, total, result):
-    status = "OK" if result.success else result.error
-    print(f"[{done}/{total}] {result.path}: {status}")
-
-results = uploader.upload_batch(
-    image_paths,
-    auto_compress=True,
-    progress_callback=on_progress
-)
-print(f"Success: {results.success_rate:.0%}")
-
-# Retry failed uploads
-if results.failed > 0:
-    retry_results = uploader.retry_failed(results)
-```
-
-## Image Compression
+## Image Compression (Utility)
 
 ```python
 from telepress import compress_image_to_size, MAX_IMAGE_SIZE
 
-# Compress to under 5MB
+# Compress image to under 5MB (for use with external hosting)
 compressed_path, was_compressed = compress_image_to_size(
     "large_photo.png",
     max_size=MAX_IMAGE_SIZE,  # 5MB
     prefer_webp=False  # output JPEG (or True for WebP)
 )
+# Then upload to imgbb.com or imgur.com and use the URL in your article
 ```
 
 Supported formats: JPEG, PNG, WebP, BMP, TIFF (GIF excluded due to animation)

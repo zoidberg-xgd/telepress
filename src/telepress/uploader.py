@@ -1,3 +1,10 @@
+"""
+Image Uploader Module (DEPRECATED)
+
+Note: Telegraph's /upload API is currently returning "Unknown error" for all uploads.
+This module is kept for reference but image upload functionality is not available.
+Use external image hosting services instead.
+"""
 import os
 import time
 import random
@@ -6,6 +13,14 @@ from typing import Optional, List, Dict, Callable, Any
 from dataclasses import dataclass, field
 from .exceptions import UploadError, DependencyError
 from .utils import validate_file_size, compress_image_to_size, MAX_IMAGE_SIZE
+
+# Telegraph upload API is currently broken
+_UPLOAD_DISABLED = True
+_UPLOAD_ERROR_MSG = (
+    "Telegraph image upload is currently unavailable (API returns 'Unknown error'). "
+    "Please use external image hosting services (e.g., imgbb.com, imgur.com) "
+    "and paste image URLs into your Telegraph article."
+)
 
 try:
     from telegraph import upload_file
@@ -88,7 +103,13 @@ class ImageUploader:
         Raises:
             FileNotFoundError: If file doesn't exist
             UploadError: If upload fails after all retries
+        
+        Note:
+            Telegraph upload API is currently broken. This method will raise UploadError.
         """
+        if _UPLOAD_DISABLED:
+            raise UploadError(_UPLOAD_ERROR_MSG)
+        
         if not os.path.exists(path):
             raise FileNotFoundError(f"Image not found: {path}")
         
