@@ -1,98 +1,108 @@
 # TelePress
 
-TelePress is a Python tool and library for publishing local content to [Telegraph](https://telegra.ph). It supports Markdown, images, and Zip archives, handling pagination for long texts and large image sets automatically.
+[中文文档](README_CN.md)
 
-## Features
+Publish Markdown, images and zip archives to [Telegraph](https://telegra.ph). Handles large files by auto-splitting into multiple linked pages.
 
-*   **Markdown**: Converts Markdown to Telegraph format. Handles header downgrading (H1->H3) automatically.
-*   **Auto Pagination**:
-    *   **Long Text**: Splits text exceeding ~40k characters into multiple linked pages.
-    *   **Galleries**: Splits large Zip archives into pages of 100 images each.
-    *   **Navigation**: Auto-generates "Previous/Next" links and page index.
-*   **Images**: Direct Zip-to-Gallery support with natural sorting (1, 2, 10...).
-*   **Interfaces**: CLI, Python SDK, and REST API.
-
-## Installation
+## Install
 
 ```bash
-git clone <repository-url>
-cd txt2gh
-pip install -e .
-```
+pip install telepress
 
-For REST API support:
-```bash
-pip install fastapi uvicorn python-multipart
+# with REST API
+pip install telepress[api]
 ```
 
 ## Usage
 
-### CLI
-
-The main command is `telepress`.
-
-**Publish Markdown**
-```bash
-telepress novel.md --title "My Novel"
-```
-
-**Publish Zip Gallery**
-```bash
-telepress comics.zip --title "Comic Vol. 1"
-```
-
-**Publish Image**
-```bash
-telepress image.jpg
-```
-
-### Python Library
-
 ```python
-from telepress import TelegraphPublisher
+from telepress import publish, publish_text
 
-publisher = TelegraphPublisher()
-
-# Publish file (auto-detect type)
-url = publisher.publish("article.md", title="Article Title")
-print(url)
+url = publish("article.md")
+url = publish_text("# Hello\n\nWorld!", title="Test")
 ```
 
-### REST API
-
-Start server:
+CLI:
 ```bash
-python3 -c "from telepress.server import start_server; start_server()"
+telepress article.md --title "My Post"
+telepress photos.zip --title "Album"
 ```
 
-Example request:
+REST API:
 ```bash
-curl -X POST "http://localhost:8000/publish/file" \
-  -F "file=@doc.zip" \
-  -F "title=My Doc"
+telepress-server --port 8000
+
+curl -X POST localhost:8000/publish/text \
+  -H "Content-Type: application/json" \
+  -d '{"content": "# Title\n\nBody", "title": "Test"}'
 ```
 
-## Notes
+## How it works
 
-*   **Token**: Created on first run and stored in `~/.telegraph_token`.
+Text files are converted to Telegraph format (Markdown supported). Large content is split at ~40KB boundaries into multiple pages with prev/next navigation.
+
+Zip files are treated as image galleries. Images are sorted naturally (1, 2, 10 not 1, 10, 2) and paginated at 100 per page.
+
+Token is auto-created on first run and saved to `~/.telegraph_token`.
 
 ## Limits
 
-| Type | Limit |
-|------|-------|
-| File size | Max 100MB |
-| Text length | Max 100 pages (~4 million chars) |
-| Gallery size | Max 5000 images |
-| Images per page | 100 |
-| Text per page | ~40KB |
+- 100MB max file size
+- 100 pages max (~4M chars text, or 5000 images)
+- 5MB per image (Telegraph limit)
 
-## Supported Formats
+Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
 
-*   **Text**: `.txt`, `.md`, `.markdown`, `.rst`, `.text`
-*   **Images**: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.bmp`
-*   **Archives**: `.zip`
+Not supported: PDF, DOCX (convert first)
 
-> ⚠️ PDF, DOCX and other binary document formats are not supported. Convert to plain text or images first.
+## Project structure
+
+```
+telepress/
+├── core.py       # TelegraphPublisher
+├── auth.py       # token management
+├── converter.py  # markdown to telegraph nodes
+├── uploader.py   # image upload with retry
+├── server.py     # FastAPI service
+└── cli.py        # command line
+```
+
+## Error handling
+
+```python
+from telepress import publish, ValidationError, TelePressError
+
+try:
+    url = publish("file.md")
+except ValidationError as e:
+    # bad input: wrong format, too large, etc
+    print(e)
+except TelePressError as e:
+    # other errors: upload failed, auth failed, etc
+    print(e)
+```
+
+## Integration
+
+```python
+# Flask
+@app.route('/publish', methods=['POST'])
+def api_publish():
+    url = publish_text(request.json['content'], title=request.json['title'])
+    return {'url': url}
+
+# async
+async def async_publish(content, title):
+    return await asyncio.to_thread(publish_text, content, title)
+```
+
+## Dev
+
+```bash
+git clone https://github.com/zoidberg-xgd/telepress
+cd telepress && pip install -e .[dev]
+pytest tests/ -v
+```
 
 ## License
 
