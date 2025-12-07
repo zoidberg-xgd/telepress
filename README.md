@@ -45,8 +45,6 @@ curl -X POST localhost:8000/publish/text \
 
 Text files are converted to Telegraph format (Markdown supported). Plain text files preserve line breaks as paragraphs. Large content is split at ~10KB boundaries into multiple pages with prev/next navigation.
 
-Zip files are treated as image galleries. Images are sorted naturally (1, 2, 10 not 1, 10, 2) and paginated at 100 per page.
-
 Token is auto-created on first run and saved to `~/.telegraph_token`.
 
 ## Features
@@ -54,32 +52,14 @@ Token is auto-created on first run and saved to `~/.telegraph_token`.
 - **Deduplication**: Same content won't be uploaded twice (cache in `~/.telepress_cache.json`)
 - **Auto-pagination**: Large content split into multiple linked pages
 - **Paragraph preservation**: Plain text line breaks become paragraphs
-- **Image compression**: Compress images to under 5MB (utility function)
 
 ## Limits
 
-- 100 images per page (for browser performance)
-- **Note**: Telegraph's image upload API is currently unavailable. Use external image hosting (imgbb.com, imgur.com) and paste URLs.
+- **Note**: Telegraph's image upload API is currently unavailable. Images must be hosted externally and URLs pasted into articles.
 
-Supported: `.txt` `.md` `.markdown` `.rst` `.zip` (with image URLs)
+Supported: `.txt` `.md` `.markdown` `.rst`
 
-Not supported: PDF, DOCX (convert first)
-
-## Image Compression (Utility)
-
-```python
-from telepress import compress_image_to_size, MAX_IMAGE_SIZE
-
-# Compress image to under 5MB (for use with external hosting)
-compressed_path, was_compressed = compress_image_to_size(
-    "large_photo.png",
-    max_size=MAX_IMAGE_SIZE,  # 5MB
-    prefer_webp=False  # output JPEG (or True for WebP)
-)
-# Then upload to imgbb.com or imgur.com and use the URL in your article
-```
-
-Supported formats: JPEG, PNG, WebP, BMP, TIFF (GIF excluded due to animation)
+Not supported: Direct image upload, PDF, DOCX
 
 ## Project structure
 
@@ -88,8 +68,6 @@ telepress/
 ├── core.py       # TelegraphPublisher
 ├── auth.py       # token management
 ├── converter.py  # markdown to telegraph nodes
-├── uploader.py   # ImageUploader with batch & retry
-├── utils.py      # compression, validation
 ├── server.py     # FastAPI service
 └── cli.py        # command line
 ```
