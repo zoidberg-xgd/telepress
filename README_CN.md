@@ -9,8 +9,12 @@
 ```bash
 pip install telepress
 
-# 需要 REST API 的话
+# 需要 REST API
 pip install telepress[api]
+
+# 从源码安装
+git clone https://github.com/zoidberg-xgd/telepress
+cd telepress && pip install -e .
 ```
 
 ## 用法

@@ -11,6 +11,10 @@ pip install telepress
 
 # with REST API
 pip install telepress[api]
+
+# from source
+git clone https://github.com/zoidberg-xgd/telepress
+cd telepress && pip install -e .
 ```
 
 ## Usage
