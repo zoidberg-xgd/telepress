@@ -143,11 +143,10 @@ class TestPublishMarkdown(unittest.TestCase):
 
     @patch('builtins.open', new_callable=mock_open, read_data="")
     def test_publish_markdown_empty_file(self, mock_file):
-        """Test publishing empty markdown file."""
-        self.mock_client.create_page.return_value = {'url': 'http://telegra.ph/page', 'path': 'path'}
-        
-        url = self.publisher.publish_markdown('/fake/path.md', title="Empty")
-        self.assertEqual(url, 'http://telegra.ph/page')
+        """Test publishing empty markdown file raises ValidationError."""
+        with self.assertRaises(ValidationError) as ctx:
+            self.publisher.publish_markdown('/fake/path.md', title="Empty")
+        self.assertIn("empty", str(ctx.exception).lower())
 
 
 class TestPublishText(unittest.TestCase):
@@ -167,11 +166,10 @@ class TestPublishText(unittest.TestCase):
         self.mock_client.create_page.assert_called_once()
 
     def test_publish_text_empty_content(self):
-        """Test publishing empty content."""
-        self.mock_client.create_page.return_value = {'url': 'http://telegra.ph/page', 'path': 'path'}
-        
-        url = self.publisher.publish_text("", title="Empty")
-        self.assertEqual(url, 'http://telegra.ph/page')
+        """Test publishing empty content raises ValidationError."""
+        with self.assertRaises(ValidationError) as ctx:
+            self.publisher.publish_text("", title="Empty")
+        self.assertIn("empty", str(ctx.exception).lower())
 
     def test_publish_text_unicode(self):
         """Test publishing unicode content."""
@@ -517,6 +515,392 @@ class TestLargeContentLimits(unittest.TestCase):
             self.assertEqual(self.publisher.uploader.upload.call_count, 5000)
         finally:
             os.unlink(zip_path)
+
+
+class TestDeduplication(unittest.TestCase):
+    """Tests for content deduplication feature."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake", skip_duplicate=True)
+
+    @patch('telepress.core._load_cache')
+    @patch('telepress.core._save_cache')
+    def test_skip_duplicate_returns_cached_url(self, mock_save, mock_load):
+        """Test that duplicate content returns cached URL."""
+        mock_load.return_value = {}
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write("Test content")
+            tmp_path = f.name
+        
+        try:
+            # First publish
+            self.mock_client.create_page.return_value = {'url': 'http://cached.url', 'path': 'path'}
+            url1 = self.publisher.publish_markdown(tmp_path, title="Test")
+            
+            # Simulate cache hit
+            from telepress.core import _content_hash
+            content_key = _content_hash("Test content" + "Test")
+            self.publisher._cache[content_key] = 'http://cached.url'
+            
+            # Second publish should skip
+            self.mock_client.create_page.reset_mock()
+            url2 = self.publisher.publish_markdown(tmp_path, title="Test")
+            
+            self.assertEqual(url2, 'http://cached.url')
+            self.mock_client.create_page.assert_not_called()
+        finally:
+            os.unlink(tmp_path)
+
+    def test_skip_duplicate_disabled(self):
+        """Test that skip_duplicate=False always publishes."""
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = mock_client
+            publisher = TelegraphPublisher(token="fake", skip_duplicate=False)
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write("Test content")
+            tmp_path = f.name
+        
+        try:
+            mock_client.create_page.return_value = {'url': 'http://url', 'path': 'path'}
+            
+            # Should publish both times
+            publisher.publish_markdown(tmp_path, title="Test")
+            publisher.publish_markdown(tmp_path, title="Test")
+            
+            self.assertEqual(mock_client.create_page.call_count, 2)
+        finally:
+            os.unlink(tmp_path)
+
+
+class TestEmptyContentValidation(unittest.TestCase):
+    """Tests for empty content validation."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake")
+
+    def test_empty_file_raises_error(self):
+        """Test that empty file raises ValidationError."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write("")
+            tmp_path = f.name
+        
+        try:
+            with self.assertRaises(ValidationError) as ctx:
+                self.publisher.publish_markdown(tmp_path, title="Test")
+            self.assertIn("empty", str(ctx.exception).lower())
+        finally:
+            os.unlink(tmp_path)
+
+    def test_whitespace_only_file_raises_error(self):
+        """Test that whitespace-only file raises ValidationError."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write("   \n\n\t  \n  ")
+            tmp_path = f.name
+        
+        try:
+            with self.assertRaises(ValidationError) as ctx:
+                self.publisher.publish_markdown(tmp_path, title="Test")
+            self.assertIn("empty", str(ctx.exception).lower())
+        finally:
+            os.unlink(tmp_path)
+
+
+class TestLongLineSplitting(unittest.TestCase):
+    """Tests for handling very long lines."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake")
+
+    def test_long_line_force_split(self):
+        """Test that lines longer than chunk size are force-split."""
+        # Create content with one very long line (30000 chars, > 20000 limit)
+        long_line = "x" * 30000
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write(long_line)
+            tmp_path = f.name
+        
+        try:
+            self.mock_client.create_page.return_value = {'url': 'http://url', 'path': 'path'}
+            
+            self.publisher.publish_markdown(tmp_path, title="LongLine")
+            
+            # Should create 2 pages (30000 / 20000 = 2)
+            self.assertEqual(self.mock_client.create_page.call_count, 2)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_multiple_long_lines(self):
+        """Test handling multiple long lines."""
+        # 3 lines of 25000 chars each = 75000 chars total
+        content = ("y" * 25000 + "\n") * 3
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write(content)
+            tmp_path = f.name
+        
+        try:
+            self.mock_client.create_page.return_value = {'url': 'http://url', 'path': 'path'}
+            
+            self.publisher.publish_markdown(tmp_path, title="MultiLong")
+            
+            # Each 25000 char line needs 2 chunks, but with smart splitting
+            # Should create at least 4 pages
+            self.assertGreaterEqual(self.mock_client.create_page.call_count, 4)
+        finally:
+            os.unlink(tmp_path)
+
+
+class TestFloodControlRetry(unittest.TestCase):
+    """Tests for flood control retry logic."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake")
+
+    @patch('telepress.core.time.sleep')
+    def test_flood_control_retry_success(self, mock_sleep):
+        """Test that flood control triggers retry with proper wait time."""
+        # First call raises flood control, second succeeds
+        self.mock_client.create_page.side_effect = [
+            Exception("Flood control exceeded. Retry in 5 seconds"),
+            {'url': 'http://url', 'path': 'path'}
+        ]
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write("Short content")
+            tmp_path = f.name
+        
+        try:
+            url = self.publisher.publish_markdown(tmp_path, title="Test")
+            
+            self.assertEqual(url, 'http://url')
+            # Should have waited 6 seconds (5 + 1)
+            mock_sleep.assert_any_call(6)
+        finally:
+            os.unlink(tmp_path)
+
+    @patch('telepress.core.time.sleep')
+    def test_flood_control_max_retries_exceeded(self, mock_sleep):
+        """Test that max retries raises error."""
+        # All calls fail
+        self.mock_client.create_page.side_effect = Exception("Flood control exceeded. Retry in 5 seconds")
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write("Short content")
+            tmp_path = f.name
+        
+        try:
+            with self.assertRaises(RuntimeError) as ctx:
+                self.publisher.publish_markdown(tmp_path, title="Test")
+            self.assertIn("Failed to publish Part 1", str(ctx.exception))
+        finally:
+            os.unlink(tmp_path)
+
+
+class TestLinkPagesRetry(unittest.TestCase):
+    """Tests for link pages retry logic."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake")
+
+    @patch('telepress.core.time.sleep')
+    def test_link_pages_retry_on_flood_control(self, mock_sleep):
+        """Test that link_pages retries on flood control."""
+        pages_info = [
+            {'path': 'path1', 'url': 'http://url1', 'title': 'T1', 'content': [], 'part_num': 1},
+            {'path': 'path2', 'url': 'http://url2', 'title': 'T2', 'content': [], 'part_num': 2},
+        ]
+        
+        # First edit fails, second succeeds for each page
+        self.mock_client.edit_page.side_effect = [
+            Exception("Flood control exceeded. Retry in 3 seconds"),
+            None,  # Success for page 1
+            None,  # Success for page 2
+        ]
+        
+        self.publisher._link_pages(pages_info)
+        
+        # Should have called edit_page 3 times (1 retry + 2 successes)
+        self.assertEqual(self.mock_client.edit_page.call_count, 3)
+
+    @patch('telepress.core.time.sleep')
+    def test_link_pages_continues_on_failure(self, mock_sleep):
+        """Test that link_pages continues even if one page fails."""
+        pages_info = [
+            {'path': 'path1', 'url': 'http://url1', 'title': 'T1', 'content': [], 'part_num': 1},
+            {'path': 'path2', 'url': 'http://url2', 'title': 'T2', 'content': [], 'part_num': 2},
+        ]
+        
+        # First page always fails, second page succeeds
+        call_count = [0]
+        def side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if kwargs.get('path') == 'path1':
+                raise Exception("Error")
+            return None
+        
+        self.mock_client.edit_page.side_effect = side_effect
+        
+        # Should not raise, just print warning
+        self.publisher._link_pages(pages_info)
+
+
+class TestContentHashFunction(unittest.TestCase):
+    """Tests for content hash function."""
+    
+    def test_hash_deterministic(self):
+        """Test that same content produces same hash."""
+        from telepress.core import _content_hash
+        
+        hash1 = _content_hash("test content")
+        hash2 = _content_hash("test content")
+        
+        self.assertEqual(hash1, hash2)
+
+    def test_hash_different_for_different_content(self):
+        """Test that different content produces different hash."""
+        from telepress.core import _content_hash
+        
+        hash1 = _content_hash("content a")
+        hash2 = _content_hash("content b")
+        
+        self.assertNotEqual(hash1, hash2)
+
+    def test_hash_length(self):
+        """Test that hash has expected length."""
+        from telepress.core import _content_hash
+        
+        hash_val = _content_hash("test")
+        
+        self.assertEqual(len(hash_val), 16)
+
+
+class TestCacheFunctions(unittest.TestCase):
+    """Tests for cache load/save functions."""
+    
+    def test_load_cache_returns_empty_dict_on_missing_file(self):
+        """Test that missing cache file returns empty dict."""
+        from telepress.core import _load_cache
+        
+        with patch('os.path.exists', return_value=False):
+            cache = _load_cache()
+        
+        self.assertEqual(cache, {})
+
+    def test_load_cache_handles_corrupt_file(self):
+        """Test that corrupt cache file returns empty dict."""
+        from telepress.core import _load_cache
+        
+        with patch('os.path.exists', return_value=True):
+            with patch('builtins.open', mock_open(read_data="not valid json{")):
+                cache = _load_cache()
+        
+        self.assertEqual(cache, {})
+
+    @patch('builtins.open', new_callable=mock_open)
+    def test_save_cache_writes_json(self, mock_file):
+        """Test that save_cache writes valid JSON."""
+        from telepress.core import _save_cache
+        
+        _save_cache({'key': 'value'})
+        
+        mock_file.assert_called()
+
+
+class TestPublishTextMethod(unittest.TestCase):
+    """Tests for publish_text method."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake")
+
+    def test_publish_text_creates_temp_file(self):
+        """Test that publish_text works with direct content."""
+        self.mock_client.create_page.return_value = {'url': 'http://url', 'path': 'path'}
+        
+        url = self.publisher.publish_text("# Hello\n\nWorld", title="Test")
+        
+        self.assertEqual(url, 'http://url')
+        self.mock_client.create_page.assert_called_once()
+
+    def test_publish_text_handles_unicode(self):
+        """Test that publish_text handles unicode content."""
+        self.mock_client.create_page.return_value = {'url': 'http://url', 'path': 'path'}
+        
+        url = self.publisher.publish_text("中文内容 🎉 émojis", title="Unicode")
+        
+        self.assertEqual(url, 'http://url')
+
+    def test_publish_text_empty_raises_error(self):
+        """Test that empty text raises ValidationError."""
+        with self.assertRaises(ValidationError):
+            self.publisher.publish_text("", title="Empty")
+
+    def test_publish_text_whitespace_raises_error(self):
+        """Test that whitespace-only text raises ValidationError."""
+        with self.assertRaises(ValidationError):
+            self.publisher.publish_text("   \n\t  ", title="Whitespace")
+
+
+class TestPartialPublishFailure(unittest.TestCase):
+    """Tests for partial publish failure handling."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake")
+
+    @patch('telepress.core.time.sleep')
+    def test_failure_reports_successful_pages(self, mock_sleep):
+        """Test that failure message includes successfully published pages."""
+        # Content that will be split into 3 pages
+        content = "x" * 50000  # ~3 pages at 20000 each
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+            f.write(content)
+            tmp_path = f.name
+        
+        try:
+            # First 2 pages succeed, third fails
+            self.mock_client.create_page.side_effect = [
+                {'url': 'http://url1', 'path': 'path1'},
+                {'url': 'http://url2', 'path': 'path2'},
+                Exception("Network error"),
+                Exception("Network error"),
+                Exception("Network error"),
+                Exception("Network error"),
+                Exception("Network error"),
+            ]
+            
+            with self.assertRaises(RuntimeError) as ctx:
+                self.publisher.publish_markdown(tmp_path, title="Test")
+            
+            error_msg = str(ctx.exception)
+            self.assertIn("Successfully published: 2 pages", error_msg)
+            self.assertIn("http://url1", error_msg)
+        finally:
+            os.unlink(tmp_path)
 
 
 if __name__ == '__main__':

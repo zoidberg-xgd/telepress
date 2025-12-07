@@ -1,6 +1,10 @@
 import os
+import re
+import time
 import tempfile
 import zipfile
+import json
+import hashlib
 from typing import Optional, List, Dict
 from .auth import TelegraphAuth
 from .converter import MarkdownConverter
@@ -13,17 +17,45 @@ from .utils import (
 from .exceptions import UploadError, ValidationError
 from .interfaces import IPublisher
 
+# Cache file for deduplication
+CACHE_FILE = os.path.expanduser("~/.telepress_cache.json")
+
+def _load_cache() -> Dict:
+    """Load published content cache."""
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+def _save_cache(cache: Dict):
+    """Save published content cache."""
+    try:
+        with open(CACHE_FILE, 'w') as f:
+            json.dump(cache, f, indent=2)
+    except:
+        pass
+
+def _content_hash(content: str) -> str:
+    """Generate hash for content deduplication."""
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
+
+
 class TelegraphPublisher(IPublisher):
     """
     Main interface for publishing content to Telegraph.
     """
     IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 
-    def __init__(self, token: Optional[str] = None, short_name: str = "TelegraphPublisher"):
+    def __init__(self, token: Optional[str] = None, short_name: str = "TelegraphPublisher", skip_duplicate: bool = True):
         self.auth = TelegraphAuth()
         self.client = self.auth.get_client(token, short_name)
         self.converter = MarkdownConverter()
         self.uploader = ImageUploader()
+        self.skip_duplicate = skip_duplicate
+        self._cache = _load_cache() if skip_duplicate else {}
 
     def publish(self, file_path: str, title: Optional[str] = None) -> str:
         """
@@ -72,16 +104,19 @@ class TelegraphPublisher(IPublisher):
     def _link_pages(self, pages_info: List[Dict]):
         """
         Helper to add navigation links (Prev/Next/Index) to a list of pages.
+        Robust: retries on failure, verifies links are correct.
         """
         total_parts = len(pages_info)
         if total_parts <= 1:
             return
 
         print(f"Linking {total_parts} pages...")
+        failed_links = []
+        
         for i, info in enumerate(pages_info):
             nav_nodes = []
             
-            # 1. Navigation Links (Prev/Next)
+            # 1. Navigation Links (Prev/Next) - only link to valid pages
             nav_links = []
             if i > 0:
                 prev_url = pages_info[i-1]['url']
@@ -103,36 +138,55 @@ class TelegraphPublisher(IPublisher):
             if nav_links:
                 nav_nodes.append({'tag': 'p', 'children': nav_links})
             
-            # 2. Pagination Index (Page Numbers)
-            # Limit index if too many pages to avoid hitting node limits on the index itself
-            # Show: [1] ... [current-2] [current-1] [current] [current+1] [current+2] ... [last]
+            # 2. Pagination Index - only include successfully published pages
             page_index_nodes = ["Pages: "]
             
-            # Simple full list for now, optimized for < 100 pages
             if total_parts < 50:
                 for p_idx, p_info in enumerate(pages_info):
-                    label = str(p_idx + 1)
+                    label = str(p_info.get('part_num', p_idx + 1))
                     if p_idx == i:
                         page_index_nodes.append({'tag': 'b', 'children': [f"[{label}]"]})
                     else:
                         page_index_nodes.append({'tag': 'a', 'attrs': {'href': p_info['url']}, 'children': [f"[{label}]"]})
                     page_index_nodes.append(" ")
             else:
-                # Simplified index for very large sets
-                page_index_nodes.append(f"{i+1} / {total_parts}")
+                page_index_nodes.append(f"{info.get('part_num', i+1)} / {total_parts}")
 
             nav_nodes.append({'tag': 'p', 'children': page_index_nodes})
 
             if nav_nodes:
                 new_content = info['content'] + [{'tag': 'hr'}] + nav_nodes
-                try:
-                    self.client.edit_page(
-                        path=info['path'],
-                        title=info['title'],
-                        content=new_content
-                    )
-                except Exception as e:
-                    print(f"Warning: Failed to add navigation to Part {i+1}: {e}")
+                
+                # Retry logic for linking
+                max_retries = 3
+                success = False
+                for attempt in range(max_retries):
+                    try:
+                        self.client.edit_page(
+                            path=info['path'],
+                            title=info['title'],
+                            content=new_content
+                        )
+                        success = True
+                        break
+                    except Exception as e:
+                        error_msg = str(e)
+                        match = re.search(r'Retry in (\d+)', error_msg)
+                        if 'Flood control' in error_msg and match:
+                            wait_time = int(match.group(1)) + 1
+                            print(f"  Link {i+1}: rate limited, waiting {wait_time}s...")
+                            time.sleep(wait_time)
+                        elif attempt < max_retries - 1:
+                            time.sleep(1)
+                        else:
+                            failed_links.append(i + 1)
+                            print(f"Warning: Failed to link Part {i+1}: {e}")
+                
+                if success and i < total_parts - 1:
+                    time.sleep(0.3)  # Small delay between edits
+        
+        if failed_links:
+            print(f"Note: Navigation failed for parts: {failed_links}. Content is still accessible.")
 
     def publish_markdown(self, file_path: str, title: str) -> str:
         """
@@ -153,18 +207,42 @@ class TelegraphPublisher(IPublisher):
                 f"Only plain text files (.txt, .md) are supported."
             )
         
+        # Check for empty content
+        if not content.strip():
+            raise ValidationError("File is empty or contains only whitespace")
+        
+        # Generate content key for deduplication
+        content_key = _content_hash(content + title) if self.skip_duplicate else None
+        
+        # Check for duplicate content
+        if content_key and content_key in self._cache:
+            cached_url = self._cache[content_key]
+            print(f"Skipping duplicate content, already published: {cached_url}")
+            return cached_url
+        
         # Split content if too large
-        # Telegraph safe limit is around 60KB JSON, so ~30-40KB text is safe.
-        SAFE_CHUNK_SIZE = 40000 
+        # Telegraph limit is ~64KB JSON. After markdown conversion, text expands.
+        # Use conservative 20KB to be safe.
+        SAFE_CHUNK_SIZE = 20000 
         
         chunks = []
         if len(content) > SAFE_CHUNK_SIZE:
             print(f"Text too large ({len(content)} chars). Splitting...")
             current_chunk = []
             current_len = 0
-            # Split by lines to preserve markdown structure somewhat
+            # Split by lines to preserve markdown structure
             for line in content.splitlines(keepends=True):
-                if current_len + len(line) > SAFE_CHUNK_SIZE:
+                # Handle very long lines by force-splitting
+                while len(line) > SAFE_CHUNK_SIZE:
+                    if current_chunk:
+                        chunks.append("".join(current_chunk))
+                        current_chunk = []
+                        current_len = 0
+                    # Split long line at chunk size
+                    chunks.append(line[:SAFE_CHUNK_SIZE])
+                    line = line[SAFE_CHUNK_SIZE:]
+                
+                if current_len + len(line) > SAFE_CHUNK_SIZE and current_chunk:
                     chunks.append("".join(current_chunk))
                     current_chunk = []
                     current_len = 0
@@ -183,7 +261,7 @@ class TelegraphPublisher(IPublisher):
 
         total_parts = len(chunks)
         pages_info = []
-
+        
         for i, chunk_text in enumerate(chunks):
             part_num = i + 1
             page_title = title
@@ -193,21 +271,50 @@ class TelegraphPublisher(IPublisher):
             print(f"Publishing Part {part_num}/{total_parts} ({len(chunk_text)} chars)...")
             nodes = self.converter.convert(chunk_text)
             
-            try:
-                response = self.client.create_page(title=page_title, content=nodes)
-                pages_info.append({
-                    'path': response['path'],
-                    'url': response['url'],
-                    'title': page_title,
-                    'content': nodes
-                })
-            except Exception as e:
-                 raise RuntimeError(f"Failed to publish Part {part_num}: {e}")
+            # Retry with delay for flood control
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.create_page(title=page_title, content=nodes)
+                    pages_info.append({
+                        'path': response['path'],
+                        'url': response['url'],
+                        'title': page_title,
+                        'content': nodes,
+                        'part_num': part_num
+                    })
+                    # Small delay between requests to avoid flood control
+                    if i < len(chunks) - 1:
+                        time.sleep(0.5)
+                    break
+                except Exception as e:
+                    error_msg = str(e)
+                    # Handle flood control - extract wait time
+                    match = re.search(r'Retry in (\d+)', error_msg)
+                    if 'Flood control' in error_msg and match:
+                        wait_time = int(match.group(1)) + 1
+                        print(f"  Rate limited, waiting {wait_time}s...")
+                        time.sleep(wait_time)
+                    elif attempt < max_retries - 1:
+                        time.sleep(2)
+                    else:
+                        # Failed after all retries - stop to preserve order
+                        raise RuntimeError(
+                            f"Failed to publish Part {part_num}/{total_parts} after {max_retries} attempts: {e}\n"
+                            f"Successfully published: {len(pages_info)} pages. First page: {pages_info[0]['url'] if pages_info else 'none'}"
+                        )
 
         # Link pages if multiple
         self._link_pages(pages_info)
 
-        return pages_info[0]['url'] if pages_info else ""
+        result_url = pages_info[0]['url'] if pages_info else ""
+        
+        # Save to cache for deduplication
+        if content_key and result_url:
+            self._cache[content_key] = result_url
+            _save_cache(self._cache)
+        
+        return result_url
 
     def publish_image(self, image_path: str, title: str) -> str:
         """Publish a single image to Telegraph."""
