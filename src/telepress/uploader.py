@@ -170,7 +170,8 @@ class ImageUploader:
         self,
         path: str,
         retries: int = 3,
-        auto_compress: bool = True
+        auto_compress: bool = True,
+        max_size: int = MAX_IMAGE_SIZE
     ) -> UploadResult:
         """
         Upload without raising exceptions. Returns UploadResult with status.
@@ -179,9 +180,9 @@ class ImageUploader:
         """
         result = UploadResult(path=path)
         try:
-            result.url = self.upload(path, retries=retries, auto_compress=auto_compress)
+            result.url = self.upload(path, retries=retries, auto_compress=auto_compress, max_size=max_size)
             result.success = True
-            result.compressed = os.path.getsize(path) > MAX_IMAGE_SIZE
+            result.compressed = os.path.getsize(path) > max_size
         except Exception as e:
             result.error = str(e)
             result.success = False
@@ -192,6 +193,7 @@ class ImageUploader:
         paths: List[str],
         retries: int = 3,
         auto_compress: bool = True,
+        max_size: int = MAX_IMAGE_SIZE,
         max_workers: Optional[int] = None,
         progress_callback: Optional[Callable[[int, int, UploadResult], Any]] = None,
         stop_on_error: bool = False
@@ -203,6 +205,7 @@ class ImageUploader:
             paths: List of image file paths to upload
             retries: Number of retry attempts per image (default: 3)
             auto_compress: Auto-compress large images (default: True)
+            max_size: Max size in bytes before compression (default: 5MB)
             max_workers: Override max concurrent workers (default: use instance setting)
             progress_callback: Called after each upload with (completed, total, result)
             stop_on_error: Stop batch on first error (default: False)
@@ -230,7 +233,7 @@ class ImageUploader:
             # Submit all tasks
             future_to_path = {
                 executor.submit(
-                    self.upload_safe, path, retries, auto_compress
+                    self.upload_safe, path, retries, auto_compress, max_size
                 ): path for path in paths
             }
             
@@ -265,6 +268,7 @@ class ImageUploader:
         batch_result: BatchUploadResult,
         retries: int = 3,
         auto_compress: bool = True,
+        max_size: int = MAX_IMAGE_SIZE,
         progress_callback: Optional[Callable[[int, int, UploadResult], Any]] = None
     ) -> BatchUploadResult:
         """
@@ -276,6 +280,7 @@ class ImageUploader:
             batch_result: Previous BatchUploadResult with failures
             retries: Number of retry attempts (default: 3)
             auto_compress: Auto-compress large images (default: True)
+            max_size: Max size in bytes before compression (default: 5MB)
             progress_callback: Progress callback function
         
         Returns:
@@ -289,5 +294,6 @@ class ImageUploader:
             failed_paths,
             retries=retries,
             auto_compress=auto_compress,
+            max_size=max_size,
             progress_callback=progress_callback
         )

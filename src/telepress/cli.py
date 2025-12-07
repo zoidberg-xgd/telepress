@@ -2,12 +2,53 @@ import argparse
 import sys
 import json
 import os
+import base64
+import tempfile
 from pathlib import Path
 from typing import Dict, Any
 
 from .core import TelegraphPublisher
 from .exceptions import TelePressError
 from .image_host import IMAGE_HOSTS
+from .uploader import ImageUploader
+
+
+def handle_check_config():
+    """Check image host configuration."""
+    print("🔍 Checking image host configuration...")
+    
+    try:
+        uploader = ImageUploader()
+        host_name = uploader.host.name
+        print(f"✅ Configuration loaded. Host: {host_name}")
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}")
+        return
+    except Exception as e:
+        print(f"❌ Failed to load configuration: {e}")
+        return
+
+    print(f"🚀 Testing upload to {host_name}...")
+    
+    # Create a minimal 1x1 GIF
+    # R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+    gif_data = b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x01\x44\x00\x3b'
+    
+    with tempfile.NamedTemporaryFile(suffix='.gif', delete=False) as f:
+        f.write(gif_data)
+        temp_path = f.name
+        
+    try:
+        url = uploader.upload(temp_path, retries=1, auto_compress=False)
+        print(f"✅ Upload successful!")
+        print(f"🔗 Test image URL: {url}")
+        print("🎉 Configuration is working correctly.")
+    except Exception as e:
+        print(f"❌ Upload failed: {e}")
+        print("⚠️ Please check your configuration and API keys/tokens.")
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 
 def configure_wizard():
@@ -122,7 +163,7 @@ def handle_publish(args):
 
 def main():
     # Backward compatibility check: if first arg is not a known subcommand and not a flag
-    if len(sys.argv) > 1 and sys.argv[1] != 'configure' and not sys.argv[1].startswith('-'):
+    if len(sys.argv) > 1 and sys.argv[1] not in ('configure', 'check') and not sys.argv[1].startswith('-'):
         parser = argparse.ArgumentParser(description="TelePress: Publish to Telegraph")
         parser.add_argument("file", help="Path to the file to convert")
         parser.add_argument("--title", help="Custom title for the page", default=None)
@@ -139,6 +180,9 @@ def main():
     # Configure command
     subparsers.add_parser('configure', help='Configure image hosting')
     
+    # Check config command
+    subparsers.add_parser('check', help='Check image host configuration')
+    
     # Publish command (explicit)
     publish_parser = subparsers.add_parser('publish', help='Publish a file')
     publish_parser.add_argument("file", help="Path to the file to convert")
@@ -151,6 +195,8 @@ def main():
     
     if args.command == 'configure':
         configure_wizard()
+    elif args.command == 'check':
+        handle_check_config()
     elif args.command == 'publish':
         handle_publish(args)
     else:

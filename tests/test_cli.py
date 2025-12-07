@@ -169,5 +169,55 @@ class TestCLIOutput(unittest.TestCase):
         self.assertIn('Test error message', output)
 
 
+class TestCLICheck(unittest.TestCase):
+    @patch('telepress.cli.ImageUploader')
+    def test_check_success(self, MockUploader):
+        """Test successful check."""
+        mock_instance = MagicMock()
+        mock_instance.host.name = 'test_host'
+        mock_instance.upload.return_value = 'http://example.com/test.gif'
+        MockUploader.return_value = mock_instance
+        
+        with patch.object(sys, 'argv', ['telepress', 'check']):
+            with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                main()
+        
+        output = mock_stdout.getvalue()
+        self.assertIn('✅ Configuration loaded', output)
+        self.assertIn('test_host', output)
+        self.assertIn('✅ Upload successful', output)
+        self.assertIn('http://example.com/test.gif', output)
+
+    @patch('telepress.cli.ImageUploader')
+    def test_check_config_error(self, MockUploader):
+        """Test check with configuration error."""
+        MockUploader.side_effect = ValueError("Missing API key")
+        
+        with patch.object(sys, 'argv', ['telepress', 'check']):
+            with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                main()
+        
+        output = mock_stdout.getvalue()
+        self.assertIn('❌ Configuration error', output)
+        self.assertIn('Missing API key', output)
+
+    @patch('telepress.cli.ImageUploader')
+    def test_check_upload_failure(self, MockUploader):
+        """Test check with upload failure."""
+        mock_instance = MagicMock()
+        mock_instance.host.name = 'test_host'
+        mock_instance.upload.side_effect = Exception("Connection failed")
+        MockUploader.return_value = mock_instance
+        
+        with patch.object(sys, 'argv', ['telepress', 'check']):
+            with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                main()
+        
+        output = mock_stdout.getvalue()
+        self.assertIn('✅ Configuration loaded', output)
+        self.assertIn('test_host', output)
+        self.assertIn('❌ Upload failed', output)
+        self.assertIn('Connection failed', output)
+
 if __name__ == '__main__':
     unittest.main()

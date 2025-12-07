@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import sys
 import tempfile
 import zipfile
 import json
@@ -412,20 +413,41 @@ class TelegraphPublisher(IPublisher):
                 
                 print(f"Uploading Part {part_num}/{total_parts} ({len(chunk_images)} images)...")
                 
+                # Use batch upload with progress bar
+                def progress_callback(completed, total, result):
+                    percent = (completed / total) * 100
+                    bar_length = 30
+                    filled_length = int(bar_length * completed // total)
+                    bar = '█' * filled_length + '-' * (bar_length - filled_length)
+                    sys.stdout.write(f'\rProgress: |{bar}| {percent:.1f}% ({completed}/{total})')
+                    sys.stdout.flush()
+                
+                batch_result = self.uploader.upload_batch(
+                    chunk_images,
+                    auto_compress=self.auto_compress,
+                    max_size=self.max_image_size,
+                    progress_callback=progress_callback
+                )
+                print()  # Newline after progress bar
+                
+                url_map = batch_result.get_url_map()
+                failed_paths = batch_result.get_failed_paths()
+                
+                if failed_paths:
+                    print(f"Warning: {len(failed_paths)} images failed to upload.")
+                    for p in failed_paths:
+                         # Find the specific result for error message
+                        err = next((r.error for r in batch_result.results if r.path == p), "Unknown error")
+                        print(f"  - {os.path.basename(p)}: {err}")
+
                 content = []
                 for img_path in chunk_images:
-                    try:
-                        url = self.uploader.upload(
-                            img_path,
-                            auto_compress=self.auto_compress,
-                            max_size=self.max_image_size
-                        )
-                        content.append({'tag': 'img', 'attrs': {'src': url}})
-                    except UploadError as e:
-                        print(f"Warning: Failed to upload {os.path.basename(img_path)}: {e}")
+                    if img_path in url_map:
+                        content.append({'tag': 'img', 'attrs': {'src': url_map[img_path]}})
                 
                 if not content and len(chunk_images) > 0:
                      print(f"Warning: Part {part_num} resulted in empty content.")
+
 
                 try:
                     # Create initial page

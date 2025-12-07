@@ -48,3 +48,6 @@ Thumbs.db
 
 # Project specific
 *.telegraph_token
+telepress.json
+.telepress.json
+*.log
