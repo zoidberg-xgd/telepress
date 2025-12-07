@@ -56,7 +56,7 @@ class ImgbbHost(ImageHost):
     
     API_URL = "https://api.imgbb.com/1/upload"
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, **kwargs):
         if not api_key:
             raise ValueError("imgbb requires an API key. Get one at https://api.imgbb.com/")
         self.api_key = api_key
@@ -97,7 +97,7 @@ class ImgurHost(ImageHost):
     
     API_URL = "https://api.imgur.com/3/image"
     
-    def __init__(self, client_id: str):
+    def __init__(self, client_id: str, **kwargs):
         if not client_id:
             raise ValueError("imgur requires a Client ID. Get one at https://api.imgur.com/oauth2/addclient")
         self.client_id = client_id
@@ -136,7 +136,7 @@ class SmmsHost(ImageHost):
     
     API_URL = "https://sm.ms/api/v2/upload"
     
-    def __init__(self, api_token: str):
+    def __init__(self, api_token: str, **kwargs):
         if not api_token:
             raise ValueError("sm.ms now requires an API token. Get one at https://sm.ms/home/apitoken")
         self.api_token = api_token
@@ -194,7 +194,8 @@ class S3Host(ImageHost):
         public_url: str,
         endpoint_url: Optional[str] = None,
         region_name: str = 'auto',
-        account_id: Optional[str] = None  # Kept for R2 convenience
+        account_id: Optional[str] = None,  # Kept for R2 convenience
+        **kwargs
     ):
         if not all([access_key_id, secret_access_key, bucket, public_url]):
             raise ValueError(
@@ -285,7 +286,8 @@ class RcloneHost(ImageHost):
         remote_path: str,
         public_url: str,
         rclone_path: str = "rclone",
-        rclone_flags: Optional[List[str]] = None
+        rclone_flags: Optional[List[str]] = None,
+        **kwargs
     ):
         if not remote_path or not public_url:
             raise ValueError("Rclone host requires remote_path and public_url")
@@ -409,7 +411,8 @@ class CustomHost(ImageHost):
         file_field: str = 'file',
         headers: Optional[Dict[str, str]] = None,
         response_url_path: str = 'url',
-        extra_data: Optional[Dict[str, str]] = None
+        extra_data: Optional[Dict[str, str]] = None,
+        **kwargs
     ):
         if not upload_url:
             raise ValueError("upload_url is required for custom host")
