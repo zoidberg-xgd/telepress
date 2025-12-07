@@ -110,10 +110,13 @@ class TelegraphPublisher(IPublisher):
         if total_parts <= 1:
             return
 
-        print(f"Linking {total_parts} pages...")
+        print(f"Linking {total_parts} pages...", end="", flush=True)
         failed_links = []
         
         for i, info in enumerate(pages_info):
+            # Show progress every 10 pages
+            if (i + 1) % 10 == 0:
+                print(f" {i+1}", end="", flush=True)
             nav_nodes = []
             
             # 1. Navigation Links (Prev/Next) - only link to valid pages
@@ -174,7 +177,6 @@ class TelegraphPublisher(IPublisher):
                         match = re.search(r'Retry in (\d+)', error_msg)
                         if 'Flood control' in error_msg and match:
                             wait_time = int(match.group(1)) + 1
-                            print(f"  Link {i+1}: rate limited, waiting {wait_time}s...")
                             time.sleep(wait_time)
                         elif attempt < max_retries - 1:
                             time.sleep(1)
@@ -185,6 +187,7 @@ class TelegraphPublisher(IPublisher):
                 if success and i < total_parts - 1:
                     time.sleep(0.3)  # Small delay between edits
         
+        print()  # End the progress line
         if failed_links:
             print(f"Note: Navigation failed for parts: {failed_links}. Content is still accessible.")
 
@@ -299,7 +302,7 @@ class TelegraphPublisher(IPublisher):
                     match = re.search(r'Retry in (\d+)', error_msg)
                     if 'Flood control' in error_msg and match:
                         wait_time = int(match.group(1)) + 1
-                        print(f"  Rate limited, waiting {wait_time}s...")
+                        print(f"  Waiting {wait_time}s...")
                         time.sleep(wait_time)
                     else:
                         time.sleep(2)
