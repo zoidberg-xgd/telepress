@@ -96,7 +96,22 @@ telepress install-rclone
         "type": "rclone",
         "remote_path": "myremote:bucket/path",
         "public_url": "https://pub.r2.dev/path",
-        "rclone_flags": ["--transfers=32", "--checkers=32"]
+        "rclone_flags": ["--transfers=32", "--checkers=32"],
+        "max_size_mb": 20
+    }
+}
+```
+
+### 其他示例
+
+**ImgBB / Imgur:**
+```json
+{
+    "image_host": {
+        "type": "imgur",
+        "client_id": "你的_client_id",
+        "max_size_mb": 10,
+        "max_workers": 8
     }
 }
 ```
