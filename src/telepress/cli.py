@@ -4,6 +4,9 @@ import json
 import os
 import base64
 import tempfile
+import shutil
+import platform
+import subprocess
 from pathlib import Path
 from typing import Dict, Any
 
@@ -49,6 +52,49 @@ def handle_check_config():
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
+
+
+def handle_install_rclone():
+    """Helper to install Rclone."""
+    system = platform.system().lower()
+    print(f"🖥️  Detected system: {platform.system()}")
+    
+    if shutil.which('rclone'):
+        print("✅ Rclone is already installed.")
+        return
+
+    print("⬇️  Attempting to install Rclone...")
+    
+    if system == 'darwin':  # macOS
+        # Try Homebrew first
+        if shutil.which('brew'):
+            print("🍺 Homebrew detected. Installing via brew...")
+            cmd = "brew install rclone"
+        else:
+            print("⚠️ Homebrew not found. Using official install script (requires sudo)...")
+            cmd = "curl https://rclone.org/install.sh | sudo bash"
+            
+    elif system == 'linux':
+        print("🐧 Using official install script (requires sudo)...")
+        cmd = "curl https://rclone.org/install.sh | sudo bash"
+        
+    elif system == 'windows':
+        print("🪟 On Windows, please run the following command in PowerShell (Admin):")
+        print("\n    winget install Rclone.Rclone\n")
+        print("Or download from: https://rclone.org/downloads/")
+        return
+    else:
+        print("❌ Unsupported system for auto-install.")
+        print("Please download manually: https://rclone.org/downloads/")
+        return
+
+    print(f"🚀 Running: {cmd}")
+    try:
+        subprocess.check_call(cmd, shell=True)
+        print("\n✅ Rclone installed successfully!")
+    except subprocess.CalledProcessError:
+        print("\n❌ Installation failed.")
+        print("Please install manually: https://rclone.org/downloads/")
 
 
 def configure_wizard():
@@ -106,6 +152,24 @@ def configure_wizard():
                 acc_id = input("Account ID (optional if endpoint set): ").strip()
                 if acc_id:
                     config['account_id'] = acc_id
+
+        elif host_type == 'rclone':
+            if not shutil.which('rclone'):
+                print("\n⚠️  Rclone is NOT installed or not in PATH.")
+                print("You can install it later by running: telepress install-rclone")
+                
+            print("\nConfiguring Rclone:")
+            print("Ensure you have 'rclone' installed and configured in your shell.")
+            config['remote_path'] = input("Remote Path (e.g., myremote:bucket/path): ").strip()
+            config['public_url'] = input("Public URL (e.g., https://pub.r2.dev/path): ").strip()
+            
+            rclone_path = input("Rclone Executable Path (default: rclone): ").strip()
+            if rclone_path:
+                config['rclone_path'] = rclone_path
+            
+            flags_str = input("Rclone Flags (default: --transfers=32 --checkers=32): ").strip()
+            if flags_str:
+                config['rclone_flags'] = flags_str.split()
                     
         elif host_type == 'custom':
             print("\nConfiguring Custom HTTP API:")
@@ -163,7 +227,8 @@ def handle_publish(args):
 
 def main():
     # Backward compatibility check: if first arg is not a known subcommand and not a flag
-    if len(sys.argv) > 1 and sys.argv[1] not in ('configure', 'check') and not sys.argv[1].startswith('-'):
+    known_commands = ('configure', 'check', 'install-rclone')
+    if len(sys.argv) > 1 and sys.argv[1] not in known_commands and not sys.argv[1].startswith('-'):
         parser = argparse.ArgumentParser(description="TelePress: Publish to Telegraph")
         parser.add_argument("file", help="Path to the file to convert")
         parser.add_argument("--title", help="Custom title for the page", default=None)
@@ -183,6 +248,9 @@ def main():
     # Check config command
     subparsers.add_parser('check', help='Check image host configuration')
     
+    # Install Rclone command
+    subparsers.add_parser('install-rclone', help='Helper to install Rclone')
+    
     # Publish command (explicit)
     publish_parser = subparsers.add_parser('publish', help='Publish a file')
     publish_parser.add_argument("file", help="Path to the file to convert")
@@ -197,6 +265,8 @@ def main():
         configure_wizard()
     elif args.command == 'check':
         handle_check_config()
+    elif args.command == 'install-rclone':
+        handle_install_rclone()
     elif args.command == 'publish':
         handle_publish(args)
     else:

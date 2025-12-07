@@ -499,7 +499,7 @@ class TestImageHostsRegistry(unittest.TestCase):
     
     def test_all_hosts_registered(self):
         """Test that all expected hosts are registered."""
-        expected = {'imgbb', 'imgur', 'smms', 'r2', 's3', 'custom'}
+        expected = {'imgbb', 'imgur', 'smms', 'r2', 's3', 'custom', 'rclone'}
         self.assertEqual(set(IMAGE_HOSTS.keys()), expected)
     
     def test_all_hosts_are_image_host_subclass(self):

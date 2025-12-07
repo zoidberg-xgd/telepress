@@ -185,17 +185,24 @@ class TestPublishImage(unittest.TestCase):
             self.mock_client = MagicMock()
             MockAuth.return_value.get_client.return_value = self.mock_client
             self.publisher = TelegraphPublisher(token="fake", skip_duplicate=False)
+            # Mock uploader
+            self.publisher.uploader = MagicMock()
 
     def test_publish_image_success(self):
         """Test successful image publishing."""
-        self.publisher.uploader = MagicMock()
-        self.publisher.uploader.upload.return_value = "http://telegra.ph/file/img.jpg"
-        self.mock_client.create_page.return_value = {'url': 'http://telegra.ph/img', 'path': 'path'}
-
-        url = self.publisher.publish_image('/fake/image.jpg', title="MyImage")
-        
-        self.assertEqual(url, 'http://telegra.ph/img')
-        self.publisher.uploader.upload.assert_called_with('/fake/image.jpg')
+        with patch('os.path.exists', return_value=True):
+            self.publisher.uploader.upload.return_value = 'http://telegra.ph/file/img.jpg'
+            self.mock_client.create_page.return_value = {'url': 'http://telegra.ph/image', 'path': 'image'}
+            
+            url = self.publisher.publish_image('/fake/image.jpg', title="Test Image")
+            
+            self.assertEqual(url, 'http://telegra.ph/image')
+            # Use assert_any_call or match specific args
+            self.publisher.uploader.upload.assert_called_with(
+                '/fake/image.jpg',
+                auto_compress=True,
+                max_size=5 * 1024 * 1024
+            )
         
         # Verify content structure
         call_args = self.mock_client.create_page.call_args
@@ -222,13 +229,35 @@ class TestPublishZipGallery(unittest.TestCase):
             zip_path = tmp_zip.name
         
         try:
-            self.publisher.uploader.upload.return_value = "http://telegra.ph/file/img.jpg"
+            # Mock upload_batch result
+            mock_result = MagicMock()
+            mock_result.get_url_map.return_value = {
+                # Keys will be full paths, but here we just need to ensure get_url_map returns something useful
+                # The logic uses keys from os.walk.
+                # We can make get_url_map return a dict where lookup succeeds.
+                # Actually, publish_zip_gallery uses keys from chunk_images which are absolute paths.
+                # So we just need get_url_map to return a mapping that works.
+                # Or easier: just return a default dict or side_effect?
+                # Actually, let's just make it return a dict that matches whatever input.
+            }
+            # Wait, get_url_map() is called on the return value of upload_batch.
+            # We need to simulate that properly.
+            
+            # Creating a side effect for upload_batch to return a result object
+            def batch_side_effect(images, **kwargs):
+                res = MagicMock()
+                res.get_url_map.return_value = {img: "http://telegra.ph/file/img.jpg" for img in images}
+                res.get_failed_paths.return_value = []
+                res.results = []
+                return res
+
+            self.publisher.uploader.upload_batch.side_effect = batch_side_effect
             self.mock_client.create_page.return_value = {'url': 'http://telegra.ph/gallery', 'path': 'gallery'}
             
             url = self.publisher.publish_zip_gallery(zip_path, title="TestGallery")
             
             self.assertEqual(url, 'http://telegra.ph/gallery')
-            self.assertEqual(self.publisher.uploader.upload.call_count, 2)
+            self.assertEqual(self.publisher.uploader.upload_batch.call_count, 1)
         finally:
             os.unlink(zip_path)
 
@@ -242,17 +271,21 @@ class TestPublishZipGallery(unittest.TestCase):
             zip_path = tmp_zip.name
         
         try:
-            upload_order = []
-            def track_upload(path):
-                upload_order.append(os.path.basename(path))
-                return "http://url"
+            def batch_side_effect(images, **kwargs):
+                # Capture the order of images passed
+                self.captured_images = [os.path.basename(p) for p in images]
+                res = MagicMock()
+                res.get_url_map.return_value = {img: "http://url" for img in images}
+                res.get_failed_paths.return_value = []
+                res.results = []
+                return res
             
-            self.publisher.uploader.upload.side_effect = track_upload
+            self.publisher.uploader.upload_batch.side_effect = batch_side_effect
             self.mock_client.create_page.return_value = {'url': 'http://url', 'path': 'path'}
             
             self.publisher.publish_zip_gallery(zip_path, title="Test")
             
-            self.assertEqual(upload_order, ['1.jpg', '2.jpg', '10.jpg'])
+            self.assertEqual(self.captured_images, ['1.jpg', '2.jpg', '10.jpg'])
         finally:
             os.unlink(zip_path)
 
@@ -481,6 +514,7 @@ class TestLargeContentLimits(unittest.TestCase):
         """Test that text files are limited to MAX_PAGES."""
         # Create content for ~5 pages to keep test fast
         # (actual MAX_PAGES test would be too slow)
+        # SAFE_CHUNK_SIZE is 10000. 5*20000 = 100000 chars -> 10 pages.
         content = "x" * (5 * 20000)
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
@@ -492,8 +526,8 @@ class TestLargeContentLimits(unittest.TestCase):
             
             self.publisher.publish_markdown(tmp_path, title="Large")
             
-            # Should create 5 pages
-            self.assertEqual(self.mock_client.create_page.call_count, 5)
+            # Should create 10 pages (100000 / 10000)
+            self.assertEqual(self.mock_client.create_page.call_count, 10)
         finally:
             os.unlink(tmp_path)
 
@@ -509,13 +543,22 @@ class TestLargeContentLimits(unittest.TestCase):
         
         try:
             self.publisher.uploader = MagicMock()
-            self.publisher.uploader.upload.return_value = "http://url"
+            
+            # Mock upload_batch to return success result
+            def batch_side_effect(images, **kwargs):
+                res = MagicMock()
+                res.get_url_map.return_value = {img: "http://url" for img in images}
+                res.get_failed_paths.return_value = []
+                return res
+            self.publisher.uploader.upload_batch.side_effect = batch_side_effect
+
             self.mock_client.create_page.return_value = {'url': 'http://url', 'path': 'path'}
             
             self.publisher.publish_zip_gallery(zip_path, title="Gallery")
             
-            # Should upload 250 images across 3 pages
-            self.assertEqual(self.publisher.uploader.upload.call_count, 250)
+            # Should upload 250 images across 3 pages (100, 100, 50)
+            # So upload_batch is called 3 times
+            self.assertEqual(self.publisher.uploader.upload_batch.call_count, 3)
             self.assertEqual(self.mock_client.create_page.call_count, 3)
         finally:
             os.unlink(zip_path)
@@ -631,7 +674,8 @@ class TestLongLineSplitting(unittest.TestCase):
     @patch('telepress.core.time.sleep')
     def test_long_line_force_split(self, mock_sleep):
         """Test that lines longer than chunk size are force-split."""
-        # Create content with one very long line (30000 chars, > 20000 limit)
+        # Create content with one very long line (30000 chars, > 10000 limit)
+        # SAFE_CHUNK_SIZE is 10000. 30000 chars -> 3 pages.
         long_line = "x" * 30000
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
@@ -643,8 +687,8 @@ class TestLongLineSplitting(unittest.TestCase):
             
             self.publisher.publish_markdown(tmp_path, title="LongLine")
             
-            # Should create 2 pages (30000 / 20000 = 2)
-            self.assertEqual(self.mock_client.create_page.call_count, 2)
+            # Should create 3 pages (30000 / 10000 = 3)
+            self.assertEqual(self.mock_client.create_page.call_count, 3)
         finally:
             os.unlink(tmp_path)
 

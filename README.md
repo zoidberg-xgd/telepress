@@ -58,7 +58,9 @@ Token is auto-created on first run and saved to `~/.telegraph_token`.
 
 ## Features
 
-- **External image hosting**: Upload to imgbb, imgur, or sm.ms (configurable)
+- **External image hosting**: Upload to imgbb, imgur, sm.ms, S3/R2/OSS, or Rclone (configurable)
+- **Rclone Integration**: High-performance batch uploads using Rclone (requires [manual installation](https://rclone.org/downloads/))
+- **Smart Text Optimization**: Automatically formats novels/articles with chapter detection and layout cleanup
 - **Auto compression**: Images over 5MB automatically compressed (configurable)
 - **Batch upload**: Multi-threaded concurrent uploads with progress callback
 - **Deduplication**: Same content won't be uploaded twice
@@ -73,7 +75,7 @@ Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
 
 ## Image Upload
 
-Supported hosts: **imgbb**, **imgur**, **sm.ms**, **S3/R2/OSS**, **Custom API**
+Supported hosts: **imgbb**, **imgur**, **sm.ms**, **S3/R2/OSS**, **Rclone**, **Custom API**
 
 ### Configuration
 
@@ -82,7 +84,25 @@ Use the wizard:
 telepress configure
 ```
 
+Install Rclone (if needed):
+```bash
+telepress install-rclone
+```
+
 Or create `~/.telepress.json` manually:
+
+```json
+{
+    "image_host": {
+        "type": "rclone",
+        "remote_path": "myremote:bucket/path",
+        "public_url": "https://pub.r2.dev/path",
+        "rclone_flags": ["--transfers=32", "--checkers=32"]
+    }
+}
+```
+
+Or use S3/R2:
 
 ```json
 {
@@ -100,11 +120,9 @@ Or create `~/.telepress.json` manually:
 
 Or use environment variables:
 ```bash
-export TELEPRESS_IMAGE_HOST_TYPE=r2
-export TELEPRESS_IMAGE_HOST_ACCESS_KEY_ID=xxx
-export TELEPRESS_IMAGE_HOST_SECRET_ACCESS_KEY=xxx
-export TELEPRESS_IMAGE_HOST_BUCKET=my-bucket
-export TELEPRESS_IMAGE_HOST_PUBLIC_URL=https://pub-xxx.r2.dev
+export TELEPRESS_IMAGE_HOST_TYPE=rclone
+export TELEPRESS_IMAGE_HOST_REMOTE_PATH=myremote:bucket/path
+export TELEPRESS_IMAGE_HOST_PUBLIC_URL=https://pub.r2.dev/path
 ```
 
 ### Usage

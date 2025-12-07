@@ -4,9 +4,12 @@ External Image Hosting Module
 Supports multiple image hosting services as Telegraph's upload API is unavailable.
 """
 import os
+import shutil
+import tempfile
+import subprocess
 import base64
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Union
 from abc import ABC, abstractmethod
 from .exceptions import UploadError
 
@@ -18,6 +21,28 @@ class ImageHost(ABC):
     def upload(self, image_path: str) -> str:
         """Upload image and return URL."""
         pass
+    
+    def upload_batch(self, image_paths: list[str]) -> Dict[str, Union[str, Exception]]:
+        """
+        Batch upload images.
+        
+        Default implementation iterates over upload(), but subclasses can optimize.
+        
+        Returns:
+            Dict mapping {path: url} or {path: Exception}
+        """
+        results = {}
+        for path in image_paths:
+            try:
+                results[path] = self.upload(path)
+            except Exception as e:
+                results[path] = e
+        return results
+    
+    @property
+    def supports_native_batch(self) -> bool:
+        """Whether the host supports optimized batch uploading natively."""
+        return False
     
     @property
     @abstractmethod
@@ -241,6 +266,122 @@ class R2Host(S3Host):
         return "r2"
 
 
+class RcloneHost(ImageHost):
+    """
+    Rclone-based bulk uploader.
+    
+    Requires 'rclone' command line tool installed.
+    Uses rclone to sync/copy files to a remote destination.
+    
+    Configure with:
+    - remote_path: Destination path (e.g., 'myremote:bucket/path')
+    - public_url: Base URL for the uploaded files (e.g., 'https://pub.r2.dev/path')
+    - rclone_path: Path to rclone executable (default: 'rclone')
+    - rclone_flags: List of extra flags for rclone (default: ['--transfers=32', '--checkers=32'])
+    """
+    
+    def __init__(
+        self,
+        remote_path: str,
+        public_url: str,
+        rclone_path: str = "rclone",
+        rclone_flags: Optional[List[str]] = None
+    ):
+        if not remote_path or not public_url:
+            raise ValueError("Rclone host requires remote_path and public_url")
+        
+        self.remote_path = remote_path
+        self.public_url = public_url.rstrip('/')
+        self.rclone_path = rclone_path
+        self.rclone_flags = rclone_flags or ["--transfers=32", "--checkers=32"]
+        
+        # Verify rclone availability
+        if not shutil.which(self.rclone_path):
+            raise ValueError(
+                f"Rclone executable not found at '{self.rclone_path}'.\n"
+                "Please install Rclone from https://rclone.org/downloads/\n"
+                "Or update your config with the correct path to the rclone executable."
+            )
+
+    @property
+    def supports_native_batch(self) -> bool:
+        return True
+
+    @property
+    def name(self) -> str:
+        return "rclone"
+    
+    def upload(self, image_path: str) -> str:
+        # Fallback to single file upload via batch
+        res = self.upload_batch([image_path])
+        if isinstance(res[image_path], Exception):
+            raise res[image_path]
+        return res[image_path]
+
+    def upload_batch(self, image_paths: list[str]) -> Dict[str, Union[str, Exception]]:
+        if not image_paths:
+            return {}
+            
+        results = {}
+        
+        # Create a temporary staging directory
+        with tempfile.TemporaryDirectory() as stage_dir:
+            staged_files = {}  # Map filename -> original_path
+            
+            # Stage files
+            for path in image_paths:
+                if not os.path.exists(path):
+                    results[path] = FileNotFoundError(f"File not found: {path}")
+                    continue
+                    
+                filename = os.path.basename(path)
+                # Handle collisions by appending counter
+                base, ext = os.path.splitext(filename)
+                counter = 1
+                while filename in staged_files:
+                    filename = f"{base}_{counter}{ext}"
+                    counter += 1
+                
+                dest_path = os.path.join(stage_dir, filename)
+                try:
+                    shutil.copy2(path, dest_path)
+                    staged_files[filename] = path
+                except Exception as e:
+                    results[path] = e
+            
+            if not staged_files:
+                return results
+
+            # Run rclone copy
+            cmd = [
+                self.rclone_path, "copy", 
+                stage_dir, self.remote_path,
+                "--no-traverse"  # Optimization for copying to large buckets
+            ] + self.rclone_flags
+            
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                
+                # Mark success for all staged files
+                for filename, original_path in staged_files.items():
+                    # URL encoding for filename? 
+                    # Generally rclone preserves names. We assume URL safe or minimal encoding.
+                    # But for safety we should quote path parts?
+                    # The user example '1.jpg' is simple. 
+                    # If filename has spaces, rclone handles upload, but URL needs %20.
+                    from urllib.parse import quote
+                    encoded_name = quote(filename)
+                    results[original_path] = f"{self.public_url}/{encoded_name}"
+                    
+            except subprocess.CalledProcessError as e:
+                err_msg = f"Rclone failed: {e.stderr}"
+                # Mark all staged files as failed
+                for original_path in staged_files.values():
+                    results[original_path] = UploadError(err_msg)
+                    
+        return results
+
+
 class CustomHost(ImageHost):
     """
     Custom HTTP-based image host for any API.
@@ -334,6 +475,7 @@ IMAGE_HOSTS = {
     'smms': SmmsHost,
     's3': S3Host,
     'r2': R2Host,
+    'rclone': RcloneHost,
     'custom': CustomHost,
 }
 

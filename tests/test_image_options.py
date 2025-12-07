@@ -83,25 +83,26 @@ class TestImageOptions(unittest.TestCase):
              patch('os.path.splitext', side_effect=lambda x: (x[:-4], x[-4:])), \
              patch('tempfile.TemporaryDirectory'):
             
-            # Need to mock os.path.exists because verify checks it, but we are mocking os.walk
-            # Actually core.py doesn't check existence for zip contents in this loop, 
-            # but it does verify zip_path exists in publish method if called from there.
-            # Here we call publish_zip_gallery directly.
-            
-            # We need to mock open/read for uploader? No, uploader is mocked.
-            
+            # Mock upload_batch return value
+            mock_result = MagicMock()
+            mock_result.get_url_map.return_value = {
+                '/tmp/img1.jpg': 'http://url1',
+                '/tmp/img2.png': 'http://url2'
+            }
+            mock_result.get_failed_paths.return_value = []
+            self.mock_uploader_instance.upload_batch.return_value = mock_result
+
             publisher.publish_zip_gallery('/path/to/gallery.zip', 'Title')
             
-        # Check that upload was called with correct args for each image
-        self.mock_uploader_instance.upload.assert_any_call(
-            '/tmp/img1.jpg',
+        # Check that upload_batch was called with correct args
+        # Expected paths, sorted by name
+        expected_paths = ['/tmp/img1.jpg', '/tmp/img2.png']
+        
+        self.mock_uploader_instance.upload_batch.assert_called_with(
+            expected_paths,
             auto_compress=True,
-            max_size=1 * 1024 * 1024
-        )
-        self.mock_uploader_instance.upload.assert_any_call(
-            '/tmp/img2.png',
-            auto_compress=True,
-            max_size=1 * 1024 * 1024
+            max_size=1 * 1024 * 1024,
+            progress_callback=unittest.mock.ANY
         )
 
 if __name__ == '__main__':

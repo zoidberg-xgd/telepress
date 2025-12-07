@@ -57,7 +57,9 @@ curl -X POST localhost:8000/publish/text \
 
 ## 特性
 
-- **外部图床**: 支持 imgbb、imgur、sm.ms、Cloudflare R2
+- **外部图床**: 支持 imgbb、imgur、sm.ms、Cloudflare R2、Rclone
+- **Rclone 集成**: 高性能批量上传（需[手动安装 Rclone](https://rclone.org/downloads/)）
+- **智能文本优化**: 自动识别小说章节（第X章、Chapter X等），优化段落排版
 - **自动压缩**: 超过 5MB 的图片自动压缩（可配置）
 - **批量上传**: 多线程并发上传，带进度回调
 - **去重**: 相同内容不会重复上传
@@ -72,7 +74,7 @@ curl -X POST localhost:8000/publish/text \
 
 ## 图片上传
 
-支持图床: **imgbb**, **imgur**, **sm.ms**, **S3/R2/OSS**, **自定义 API**
+支持图床: **imgbb**, **imgur**, **sm.ms**, **S3/R2/OSS**, **Rclone**, **自定义 API**
 
 ### 配置
 
@@ -81,7 +83,25 @@ curl -X POST localhost:8000/publish/text \
 telepress configure
 ```
 
+安装 Rclone (如需使用):
+```bash
+telepress install-rclone
+```
+
 或者手动创建 `~/.telepress.json`:
+
+```json
+{
+    "image_host": {
+        "type": "rclone",
+        "remote_path": "myremote:bucket/path",
+        "public_url": "https://pub.r2.dev/path",
+        "rclone_flags": ["--transfers=32", "--checkers=32"]
+    }
+}
+```
+
+或者使用 S3/R2:
 
 ```json
 {
@@ -99,11 +119,9 @@ telepress configure
 
 或者使用环境变量:
 ```bash
-export TELEPRESS_IMAGE_HOST_TYPE=r2
-export TELEPRESS_IMAGE_HOST_ACCESS_KEY_ID=xxx
-export TELEPRESS_IMAGE_HOST_SECRET_ACCESS_KEY=xxx
-export TELEPRESS_IMAGE_HOST_BUCKET=my-bucket
-export TELEPRESS_IMAGE_HOST_PUBLIC_URL=https://pub-xxx.r2.dev
+export TELEPRESS_IMAGE_HOST_TYPE=rclone
+export TELEPRESS_IMAGE_HOST_REMOTE_PATH=myremote:bucket/path
+export TELEPRESS_IMAGE_HOST_PUBLIC_URL=https://pub.r2.dev/path
 ```
 
 ### 使用

@@ -188,6 +188,97 @@ class ImageUploader:
             result.success = False
         return result
     
+    def _upload_batch_native(
+        self,
+        paths: List[str],
+        retries: int,
+        auto_compress: bool,
+        max_size: int,
+        workers: int,
+        progress_callback: Optional[Callable[[int, int, UploadResult], Any]],
+        stop_on_error: bool
+    ) -> BatchUploadResult:
+        """Handle batch upload for hosts with native support."""
+        batch_result = BatchUploadResult(total=len(paths))
+        temp_files = []
+        path_map = {}  # upload_path -> original_path
+        
+        try:
+            # Step 1: Prepare/Compress images
+            prepared_paths = []
+            
+            def prepare(p):
+                if auto_compress:
+                    out, comp = compress_image_to_size(p, max_size)
+                    return p, out, comp
+                return p, p, False
+            
+            # We compress in parallel
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(prepare, p): p for p in paths}
+                for future in as_completed(futures):
+                    try:
+                        orig, upload_path, compressed = future.result()
+                        prepared_paths.append(upload_path)
+                        path_map[upload_path] = orig
+                        if compressed:
+                            temp_files.append(upload_path)
+                    except Exception as e:
+                        # If preparation fails, mark as failed result immediately
+                        p = futures[future]
+                        res = UploadResult(path=p, error=f"Preparation failed: {e}", success=False)
+                        batch_result.results.append(res)
+                        batch_result.failed += 1
+                        if progress_callback:
+                            progress_callback(len(batch_result.results), len(paths), res)
+            
+            if not prepared_paths:
+                return batch_result
+
+            if stop_on_error and batch_result.failed > 0:
+                return batch_result
+
+            # Step 2: Batch Upload
+            upload_results = self.host.upload_batch(prepared_paths)
+            
+            # Step 3: Process results
+            for up_path in prepared_paths:
+                # We iterate prepared_paths to maintain some order or just process all
+                # Note: upload_results keys are upload_paths
+                res_val = upload_results.get(up_path, UploadError("Unknown error"))
+                
+                orig = path_map.get(up_path, up_path)
+                result = UploadResult(path=orig)
+                
+                if isinstance(res_val, Exception):
+                    result.error = str(res_val)
+                    result.success = False
+                    batch_result.failed += 1
+                else:
+                    result.url = res_val
+                    result.success = True
+                    batch_result.successful += 1
+                
+                result.compressed = (up_path in temp_files)
+                batch_result.results.append(result)
+                
+                if progress_callback:
+                    progress_callback(len(batch_result.results), len(paths), result)
+                
+                if stop_on_error and not result.success:
+                    break
+
+        finally:
+             # Cleanup temp files
+             for tmp in temp_files:
+                 if os.path.exists(tmp):
+                     try:
+                         os.unlink(tmp)
+                     except OSError:
+                         pass
+                     
+        return batch_result
+
     def upload_batch(
         self,
         paths: List[str],
@@ -212,19 +303,19 @@ class ImageUploader:
         
         Returns:
             BatchUploadResult with all results and statistics
-        
-        Example:
-            >>> uploader = ImageUploader(max_workers=4)
-            >>> def on_progress(done, total, result):
-            ...     print(f"[{done}/{total}] {result.path}: {'OK' if result.success else result.error}")
-            >>> results = uploader.upload_batch(image_paths, progress_callback=on_progress)
-            >>> print(f"Success rate: {results.success_rate:.1%}")
         """
         workers = max_workers or self.max_workers
-        batch_result = BatchUploadResult(total=len(paths))
         
         if not paths:
-            return batch_result
+            return BatchUploadResult(total=0)
+            
+        # Optimization for hosts supporting native batch (e.g. Rclone)
+        if self.host.supports_native_batch:
+            return self._upload_batch_native(
+                paths, retries, auto_compress, max_size, workers, progress_callback, stop_on_error
+            )
+
+        batch_result = BatchUploadResult(total=len(paths))
         
         completed = 0
         should_stop = False
