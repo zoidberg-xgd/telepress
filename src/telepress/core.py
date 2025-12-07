@@ -289,20 +289,20 @@ class TelegraphPublisher(IPublisher):
                     break
                 except Exception as e:
                     error_msg = str(e)
+                    # Check if max retries reached
+                    if attempt >= max_retries - 1:
+                        raise RuntimeError(
+                            f"Failed to publish Part {part_num}/{total_parts} after {max_retries} attempts: {e}\n"
+                            f"Successfully published: {len(pages_info)} pages. First page: {pages_info[0]['url'] if pages_info else 'none'}"
+                        )
                     # Handle flood control - extract wait time
                     match = re.search(r'Retry in (\d+)', error_msg)
                     if 'Flood control' in error_msg and match:
                         wait_time = int(match.group(1)) + 1
                         print(f"  Rate limited, waiting {wait_time}s...")
                         time.sleep(wait_time)
-                    elif attempt < max_retries - 1:
-                        time.sleep(2)
                     else:
-                        # Failed after all retries - stop to preserve order
-                        raise RuntimeError(
-                            f"Failed to publish Part {part_num}/{total_parts} after {max_retries} attempts: {e}\n"
-                            f"Successfully published: {len(pages_info)} pages. First page: {pages_info[0]['url'] if pages_info else 'none'}"
-                        )
+                        time.sleep(2)
 
         # Link pages if multiple
         self._link_pages(pages_info)
