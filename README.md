@@ -111,7 +111,8 @@ Or create `~/.telepress.json` manually:
     "image_host": {
         "type": "imgur",
         "client_id": "your_client_id",
-        "max_size_mb": 10
+        "max_size_mb": 10,
+        "max_workers": 8
     }
 }
 ```

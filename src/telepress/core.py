@@ -62,14 +62,14 @@ class TelegraphPublisher(IPublisher):
         self.auth = TelegraphAuth()
         self.client = self.auth.get_client(token, short_name)
         self.converter = MarkdownConverter()
-        self.uploader = ImageUploader()
         self.skip_duplicate = skip_duplicate
         self._cache = _load_cache() if skip_duplicate else {}
         self.auto_compress = auto_compress
-        
-        # Determine image size limit
+
+        # Determine image size limit and max workers
         if image_size_limit is not None:
             self.max_image_size = int(image_size_limit * 1024 * 1024)
+            max_workers = 4  # Default
         else:
             config = load_config()
             # Check config for limit (in MB)
@@ -78,6 +78,12 @@ class TelegraphPublisher(IPublisher):
                  self.max_image_size = int(float(config_limit) * 1024 * 1024)
             else:
                  self.max_image_size = MAX_IMAGE_SIZE
+            
+            # Check config for max_workers
+            config_workers = config.get('image_host', {}).get('max_workers')
+            max_workers = int(config_workers) if config_workers else 4
+
+        self.uploader = ImageUploader(max_workers=max_workers)
 
     def publish(self, file_path: str, title: Optional[str] = None) -> str:
         """
