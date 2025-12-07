@@ -222,8 +222,8 @@ class TelegraphPublisher(IPublisher):
         
         # Split content if too large
         # Telegraph limit is ~64KB JSON. After markdown conversion, text expands.
-        # Use conservative 20KB to be safe.
-        SAFE_CHUNK_SIZE = 20000 
+        # Plain text with line breaks expands ~2x, so use 10KB to be safe.
+        SAFE_CHUNK_SIZE = 10000 
         
         chunks = []
         if len(content) > SAFE_CHUNK_SIZE:
