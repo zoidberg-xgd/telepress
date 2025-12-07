@@ -95,8 +95,8 @@ class TelegraphPublisher(IPublisher):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Safety check for huge files (100MB)
-        validate_file_size(file_path, 100 * 1024 * 1024, "File too large")
+        # Safety check for huge files (2GB)
+        validate_file_size(file_path, 2048 * 1024 * 1024, "File too large")
 
         file_name = os.path.basename(file_path)
         if not title:
