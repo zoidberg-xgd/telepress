@@ -24,6 +24,11 @@ CLI Configuration Wizard:
 telepress configure
 ```
 
+Check configuration:
+```bash
+telepress check
+```
+
 Publishing:
 ```bash
 telepress article.md --title "My Post"

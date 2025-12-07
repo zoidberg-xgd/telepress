@@ -24,6 +24,11 @@ CLI 配置向导:
 telepress configure
 ```
 
+检查配置是否正确:
+```bash
+telepress check
+```
+
 发布内容:
 ```bash
 telepress article.md --title "我的文章"
