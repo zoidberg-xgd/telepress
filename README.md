@@ -97,7 +97,21 @@ Or create `~/.telepress.json` manually:
         "type": "rclone",
         "remote_path": "myremote:bucket/path",
         "public_url": "https://pub.r2.dev/path",
-        "rclone_flags": ["--transfers=32", "--checkers=32"]
+        "rclone_flags": ["--transfers=32", "--checkers=32"],
+        "max_size_mb": 20
+    }
+}
+```
+
+### Other Examples
+
+**ImgBB / Imgur:**
+```json
+{
+    "image_host": {
+        "type": "imgur",
+        "client_id": "your_client_id",
+        "max_size_mb": 10
     }
 }
 ```
