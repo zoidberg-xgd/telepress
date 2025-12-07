@@ -43,16 +43,22 @@ curl -X POST localhost:8000/publish/text \
 
 ## How it works
 
-Text files are converted to Telegraph format (Markdown supported). Large content is split at ~40KB boundaries into multiple pages with prev/next navigation.
+Text files are converted to Telegraph format (Markdown supported). Plain text files preserve line breaks as paragraphs. Large content is split at ~10KB boundaries into multiple pages with prev/next navigation.
 
 Zip files are treated as image galleries. Images are sorted naturally (1, 2, 10 not 1, 10, 2) and paginated at 100 per page.
 
 Token is auto-created on first run and saved to `~/.telegraph_token`.
 
+## Features
+
+- **Deduplication**: Same content won't be uploaded twice (cache in `~/.telepress_cache.json`)
+- **Auto retry**: Handles Telegraph rate limits automatically
+- **Paragraph preservation**: Plain text line breaks become paragraphs
+
 ## Limits
 
 - 100MB max file size
-- 100 pages max (~4M chars text, or 5000 images)
+- 100 pages max (~1M chars text, or 5000 images)
 - 5MB per image (Telegraph limit)
 
 Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`

@@ -43,16 +43,22 @@ curl -X POST localhost:8000/publish/text \
 
 ## 原理
 
-文本文件转成 Telegraph 格式（支持 Markdown）。内容太长的话按 ~40KB 切分成多页，自动加上下一页链接。
+文本文件转成 Telegraph 格式（支持 Markdown）。纯文本的换行会保留为段落。内容太长的话按 ~10KB 切分成多页，自动加上下一页链接。
 
 Zip 文件当图集处理。图片按文件名自然排序（1, 2, 10 而不是 1, 10, 2），每 100 张一页。
 
 首次运行会自动创建 Telegraph 账号，token 存在 `~/.telegraph_token`。
 
+## 特性
+
+- **去重**: 相同内容不会重复上传（缓存在 `~/.telepress_cache.json`）
+- **自动重试**: 自动处理 Telegraph 限流
+- **保留段落**: 纯文本的换行会变成段落
+
 ## 限制
 
 - 单文件最大 100MB
-- 最多 100 页（约 400 万字，或 5000 张图）
+- 最多 100 页（约 100 万字，或 5000 张图）
 - 单张图片 5MB（Telegraph 限制）
 
 支持: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
