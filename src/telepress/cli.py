@@ -105,7 +105,11 @@ def configure_wizard():
 def handle_publish(args):
     """Handle publish command."""
     try:
-        publisher = TelegraphPublisher(token=args.token)
+        publisher = TelegraphPublisher(
+            token=args.token, 
+            image_size_limit=args.image_size_limit,
+            auto_compress=not args.no_compress
+        )
         url = publisher.publish(args.file, title=args.title)
         print(f"\n✅ Success! Page created: {url}")
     except TelePressError as e:
@@ -123,6 +127,8 @@ def main():
         parser.add_argument("file", help="Path to the file to convert")
         parser.add_argument("--title", help="Custom title for the page", default=None)
         parser.add_argument("--token", help="Telegraph access token (optional)", default=None)
+        parser.add_argument("--image-size-limit", type=float, help="Max image size in MB (default: 5)", default=None)
+        parser.add_argument("--no-compress", action="store_true", help="Disable automatic image compression")
         args = parser.parse_args()
         handle_publish(args)
         return
@@ -138,6 +144,8 @@ def main():
     publish_parser.add_argument("file", help="Path to the file to convert")
     publish_parser.add_argument("--title", help="Custom title for the page", default=None)
     publish_parser.add_argument("--token", help="Telegraph access token (optional)", default=None)
+    publish_parser.add_argument("--image-size-limit", type=float, help="Max image size in MB (default: 5)", default=None)
+    publish_parser.add_argument("--no-compress", action="store_true", help="Disable automatic image compression")
 
     args = parser.parse_args()
     

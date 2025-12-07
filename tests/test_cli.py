@@ -47,7 +47,11 @@ class TestCLI(unittest.TestCase):
             with patch('sys.stdout', new_callable=io.StringIO):
                 main()
         
-        MockPublisher.assert_called_with(token='mytoken')
+        MockPublisher.assert_called_with(
+            token='mytoken',
+            image_size_limit=None,
+            auto_compress=True
+        )
 
     @patch('telepress.cli.TelegraphPublisher')
     def test_cli_telepresserror_exits_1(self, MockPublisher):
@@ -92,12 +96,18 @@ class TestCLI(unittest.TestCase):
         with patch.object(sys, 'argv', [
             'telepress', 'document.md',
             '--title', 'Custom Title',
-            '--token', 'custom_token'
+            '--token', 'custom_token',
+            '--image-size-limit', '10',
+            '--no-compress'
         ]):
             with patch('sys.stdout', new_callable=io.StringIO):
                 main()
         
-        MockPublisher.assert_called_with(token='custom_token')
+        MockPublisher.assert_called_with(
+            token='custom_token',
+            image_size_limit=10.0,
+            auto_compress=False
+        )
         mock_instance.publish.assert_called_with('document.md', title='Custom Title')
 
 

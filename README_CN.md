@@ -27,6 +27,12 @@ telepress configure
 发布内容:
 ```bash
 telepress article.md --title "我的文章"
+
+# 调整图片大小限制为 10MB
+telepress article.md --image-size-limit 10
+
+# 关闭自动压缩
+telepress article.md --no-compress
 ```
 
 REST API:
@@ -47,7 +53,7 @@ curl -X POST localhost:8000/publish/text \
 ## 特性
 
 - **外部图床**: 支持 imgbb、imgur、sm.ms、Cloudflare R2
-- **自动压缩**: 超过 5MB 的图片自动压缩
+- **自动压缩**: 超过 5MB 的图片自动压缩（可配置）
 - **批量上传**: 多线程并发上传，带进度回调
 - **去重**: 相同内容不会重复上传
 - **自动分页**: 大内容自动分割成多个链接页面
@@ -55,7 +61,7 @@ curl -X POST localhost:8000/publish/text \
 ## 限制
 
 - Telegraph 直接上传不可用，改用外部图床
-- 单张图片 5MB（超过自动压缩）
+- 单张图片默认 5MB（超过自动压缩，可通过 `--image-size-limit` 调整或 `--no-compress` 关闭）
 
 支持: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
 

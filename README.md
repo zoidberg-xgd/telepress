@@ -28,6 +28,12 @@ Publishing:
 ```bash
 telepress article.md --title "My Post"
 telepress photos.zip --title "Album"
+
+# Set image size limit to 10MB
+telepress article.md --image-size-limit 10
+
+# Disable compression
+telepress article.md --no-compress
 ```
 
 REST API:
@@ -48,7 +54,7 @@ Token is auto-created on first run and saved to `~/.telegraph_token`.
 ## Features
 
 - **External image hosting**: Upload to imgbb, imgur, or sm.ms (configurable)
-- **Auto compression**: Images over 5MB automatically compressed
+- **Auto compression**: Images over 5MB automatically compressed (configurable)
 - **Batch upload**: Multi-threaded concurrent uploads with progress callback
 - **Deduplication**: Same content won't be uploaded twice
 - **Auto-pagination**: Large content split into multiple linked pages
@@ -56,7 +62,7 @@ Token is auto-created on first run and saved to `~/.telegraph_token`.
 ## Limits
 
 - Telegraph's direct image upload is unavailable, using external image hosts instead
-- 5MB per image (auto-compressed if larger)
+- 5MB per image (auto-compressed if larger, configurable via `--image-size-limit` or `--no-compress`)
 
 Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
 

@@ -7,11 +7,12 @@ import json
 import hashlib
 from typing import Optional, List, Dict
 from .auth import TelegraphAuth
+from .config import load_config
 from .converter import MarkdownConverter
 from .uploader import ImageUploader
 from .utils import (
     natural_sort_key, safe_extract_zip, validate_file_size,
-    MAX_TEXT_SIZE, MAX_IMAGES_PER_PAGE,
+    MAX_TEXT_SIZE, MAX_IMAGES_PER_PAGE, MAX_IMAGE_SIZE,
     ALLOWED_TEXT_EXTENSIONS, ALLOWED_ARCHIVE_EXTENSIONS, ALLOWED_IMAGE_EXTENSIONS
 )
 from .exceptions import UploadError, ValidationError
@@ -49,13 +50,33 @@ class TelegraphPublisher(IPublisher):
     """
     IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 
-    def __init__(self, token: Optional[str] = None, short_name: str = "TelegraphPublisher", skip_duplicate: bool = True):
+    def __init__(
+        self, 
+        token: Optional[str] = None, 
+        short_name: str = "TelegraphPublisher", 
+        skip_duplicate: bool = True,
+        image_size_limit: Optional[float] = None,
+        auto_compress: bool = True
+    ):
         self.auth = TelegraphAuth()
         self.client = self.auth.get_client(token, short_name)
         self.converter = MarkdownConverter()
         self.uploader = ImageUploader()
         self.skip_duplicate = skip_duplicate
         self._cache = _load_cache() if skip_duplicate else {}
+        self.auto_compress = auto_compress
+        
+        # Determine image size limit
+        if image_size_limit is not None:
+            self.max_image_size = int(image_size_limit * 1024 * 1024)
+        else:
+            config = load_config()
+            # Check config for limit (in MB)
+            config_limit = config.get('image_host', {}).get('max_size_mb')
+            if config_limit:
+                 self.max_image_size = int(float(config_limit) * 1024 * 1024)
+            else:
+                 self.max_image_size = MAX_IMAGE_SIZE
 
     def publish(self, file_path: str, title: Optional[str] = None) -> str:
         """
@@ -307,7 +328,11 @@ class TelegraphPublisher(IPublisher):
 
     def publish_image(self, image_path: str, title: str) -> str:
         """Publish a single image to Telegraph."""
-        url = self.uploader.upload(image_path)
+        url = self.uploader.upload(
+            image_path,
+            auto_compress=self.auto_compress,
+            max_size=self.max_image_size
+        )
         content = [{'tag': 'img', 'attrs': {'src': url}}]
         response = self.client.create_page(title=title, content=content)
         return response['url']
@@ -390,7 +415,11 @@ class TelegraphPublisher(IPublisher):
                 content = []
                 for img_path in chunk_images:
                     try:
-                        url = self.uploader.upload(img_path)
+                        url = self.uploader.upload(
+                            img_path,
+                            auto_compress=self.auto_compress,
+                            max_size=self.max_image_size
+                        )
                         content.append({'tag': 'img', 'attrs': {'src': url}})
                     except UploadError as e:
                         print(f"Warning: Failed to upload {os.path.basename(img_path)}: {e}")
