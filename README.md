@@ -51,19 +51,59 @@ Token is auto-created on first run and saved to `~/.telegraph_token`.
 
 ## Features
 
+- **Auto compression**: Images over 5MB are automatically compressed (JPEG/WebP)
+- **Batch upload**: Multi-threaded concurrent uploads with progress callback
+- **Retry & resume**: Exponential backoff retry, resume failed uploads
 - **Deduplication**: Same content won't be uploaded twice (cache in `~/.telepress_cache.json`)
-- **Auto retry**: Handles Telegraph rate limits automatically
 - **Paragraph preservation**: Plain text line breaks become paragraphs
 
 ## Limits
 
-- 100MB max file size
-- 100 pages max (~1M chars text, or 5000 images)
-- 5MB per image (Telegraph limit)
+- 5MB per image (auto-compressed if larger)
+- 100 images per page (for browser performance)
 
-Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
+Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.jpeg` `.png` `.gif` `.webp` `.bmp` `.tiff` `.zip`
 
 Not supported: PDF, DOCX (convert first)
+
+## Batch Upload
+
+```python
+from telepress import ImageUploader
+
+uploader = ImageUploader(max_workers=4)
+
+# Upload with progress
+def on_progress(done, total, result):
+    status = "OK" if result.success else result.error
+    print(f"[{done}/{total}] {result.path}: {status}")
+
+results = uploader.upload_batch(
+    image_paths,
+    auto_compress=True,
+    progress_callback=on_progress
+)
+print(f"Success: {results.success_rate:.0%}")
+
+# Retry failed uploads
+if results.failed > 0:
+    retry_results = uploader.retry_failed(results)
+```
+
+## Image Compression
+
+```python
+from telepress import compress_image_to_size, MAX_IMAGE_SIZE
+
+# Compress to under 5MB
+compressed_path, was_compressed = compress_image_to_size(
+    "large_photo.png",
+    max_size=MAX_IMAGE_SIZE,  # 5MB
+    prefer_webp=False  # output JPEG (or True for WebP)
+)
+```
+
+Supported formats: JPEG, PNG, WebP, BMP, TIFF (GIF excluded due to animation)
 
 ## Project structure
 
@@ -72,7 +112,8 @@ telepress/
 ├── core.py       # TelegraphPublisher
 ├── auth.py       # token management
 ├── converter.py  # markdown to telegraph nodes
-├── uploader.py   # image upload with retry
+├── uploader.py   # ImageUploader with batch & retry
+├── utils.py      # compression, validation
 ├── server.py     # FastAPI service
 └── cli.py        # command line
 ```

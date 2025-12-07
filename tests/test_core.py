@@ -910,5 +910,123 @@ class TestPartialPublishFailure(unittest.TestCase):
             os.unlink(tmp_path)
 
 
+class TestPublishOptimizedGallery(unittest.TestCase):
+    """Tests for publish_optimized_gallery method."""
+    
+    def setUp(self):
+        with patch('telepress.core.TelegraphAuth') as MockAuth:
+            self.mock_client = MagicMock()
+            MockAuth.return_value.get_client.return_value = self.mock_client
+            self.publisher = TelegraphPublisher(token="fake", skip_duplicate=False)
+
+    def test_publish_optimized_gallery_single_page(self):
+        """Test publishing a small gallery that fits in one page."""
+        image_urls = [
+            "http://example.com/img1.jpg",
+            "http://example.com/img2.jpg",
+            "http://example.com/img3.jpg"
+        ]
+        
+        self.mock_client.create_page.return_value = {
+            'url': 'http://telegra.ph/test',
+            'path': 'test'
+        }
+        
+        result = self.publisher.publish_optimized_gallery(image_urls, title="Test Gallery")
+        
+        self.assertEqual(result, 'http://telegra.ph/test')
+        self.mock_client.create_page.assert_called_once()
+        
+        # Verify content structure
+        call_args = self.mock_client.create_page.call_args
+        content = call_args.kwargs.get('content') or call_args[1].get('content')
+        self.assertEqual(len(content), 3)  # 3 images
+        for i, node in enumerate(content):
+            self.assertEqual(node['tag'], 'img')
+            self.assertEqual(node['attrs']['src'], image_urls[i])
+
+    def test_publish_optimized_gallery_empty_urls(self):
+        """Test that empty URL list raises ValidationError."""
+        with self.assertRaises(ValidationError):
+            self.publisher.publish_optimized_gallery([], title="Test")
+
+    def test_publish_optimized_gallery_pagination(self):
+        """Test that large galleries are split into multiple pages."""
+        # Create 150 image URLs (should be split into 2 pages at 100 per page)
+        image_urls = [f"http://example.com/img{i}.jpg" for i in range(150)]
+        
+        self.mock_client.create_page.side_effect = [
+            {'url': 'http://telegra.ph/page1', 'path': 'page1'},
+            {'url': 'http://telegra.ph/page2', 'path': 'page2'},
+        ]
+        self.mock_client.edit_page.return_value = {}
+        
+        result = self.publisher.publish_optimized_gallery(image_urls, title="Test Gallery")
+        
+        self.assertEqual(result, 'http://telegra.ph/page1')
+        self.assertEqual(self.mock_client.create_page.call_count, 2)
+        
+        # First page should have title with (1/2)
+        first_call = self.mock_client.create_page.call_args_list[0]
+        self.assertIn("1/2", first_call.kwargs.get('title', first_call[1].get('title', '')))
+        
+        # Second page should have title with (2/2)
+        second_call = self.mock_client.create_page.call_args_list[1]
+        self.assertIn("2/2", second_call.kwargs.get('title', second_call[1].get('title', '')))
+
+    def test_publish_optimized_gallery_no_upload(self):
+        """Test that no image upload is performed (URLs used directly)."""
+        image_urls = ["http://myserver.com/gallery/1.jpg"]
+        
+        self.mock_client.create_page.return_value = {
+            'url': 'http://telegra.ph/test',
+            'path': 'test'
+        }
+        
+        with patch.object(self.publisher.uploader, 'upload') as mock_upload:
+            self.publisher.publish_optimized_gallery(image_urls, title="Test")
+            mock_upload.assert_not_called()  # No upload should happen
+
+    def test_publish_optimized_gallery_preserves_url_order(self):
+        """Test that image URLs maintain their order."""
+        image_urls = [
+            "http://example.com/z.jpg",
+            "http://example.com/a.jpg",
+            "http://example.com/m.jpg"
+        ]
+        
+        self.mock_client.create_page.return_value = {
+            'url': 'http://telegra.ph/test',
+            'path': 'test'
+        }
+        
+        self.publisher.publish_optimized_gallery(image_urls, title="Test")
+        
+        call_args = self.mock_client.create_page.call_args
+        content = call_args.kwargs.get('content') or call_args[1].get('content')
+        
+        # Order should be preserved exactly as input
+        self.assertEqual(content[0]['attrs']['src'], "http://example.com/z.jpg")
+        self.assertEqual(content[1]['attrs']['src'], "http://example.com/a.jpg")
+        self.assertEqual(content[2]['attrs']['src'], "http://example.com/m.jpg")
+
+    @patch('telepress.core.time.sleep')
+    def test_publish_optimized_gallery_links_pages(self, mock_sleep):
+        """Test that multi-page galleries get navigation links."""
+        image_urls = [f"http://example.com/img{i}.jpg" for i in range(150)]
+        
+        self.mock_client.create_page.side_effect = [
+            {'url': 'http://telegra.ph/page1', 'path': 'page1'},
+            {'url': 'http://telegra.ph/page2', 'path': 'page2'},
+        ]
+        self.mock_client.edit_page.return_value = {}
+        
+        self.publisher.publish_optimized_gallery(image_urls, title="Test")
+        
+        # edit_page should be called to add navigation links
+        self.assertTrue(self.mock_client.edit_page.called)
+
+
 if __name__ == '__main__':
     unittest.main()
+

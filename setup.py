@@ -2,13 +2,14 @@ from setuptools import setup, find_packages
 
 setup(
     name="telepress",
-    version="0.1.0",
+    version="0.1.1",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     install_requires=[
         "telegraph",
         "markdown",
-        "requests"
+        "requests",
+        "Pillow"
     ],
     extras_require={
         "api": [

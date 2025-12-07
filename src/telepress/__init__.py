@@ -14,6 +14,7 @@ Basic usage:
 """
 
 from .core import TelegraphPublisher
+from .uploader import ImageUploader, UploadResult, BatchUploadResult
 from .exceptions import (
     TelePressError,
     ValidationError,
@@ -24,23 +25,26 @@ from .exceptions import (
     ConversionError
 )
 from .utils import (
-    MAX_FILE_SIZE,
-    MAX_PAGES,
-    MAX_TOTAL_IMAGES,
     MAX_IMAGES_PER_PAGE,
+    MAX_IMAGE_SIZE,
     ALLOWED_TEXT_EXTENSIONS,
     ALLOWED_IMAGE_EXTENSIONS,
-    ALLOWED_ARCHIVE_EXTENSIONS
+    ALLOWED_ARCHIVE_EXTENSIONS,
+    compress_image_to_size
 )
 
 __version__ = "0.1.0"
 __all__ = [
-    # Main class
+    # Main classes
     'TelegraphPublisher',
+    'ImageUploader',
+    'UploadResult',
+    'BatchUploadResult',
     
-    # Convenience function
+    # Convenience functions
     'publish',
     'publish_text',
+    'compress_image_to_size',
     
     # Exceptions
     'TelePressError',
@@ -52,9 +56,7 @@ __all__ = [
     'ConversionError',
     
     # Constants
-    'MAX_FILE_SIZE',
-    'MAX_PAGES',
-    'MAX_TOTAL_IMAGES',
+    'MAX_IMAGE_SIZE',
     'MAX_IMAGES_PER_PAGE',
     'ALLOWED_TEXT_EXTENSIONS',
     'ALLOWED_IMAGE_EXTENSIONS',

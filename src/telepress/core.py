@@ -11,7 +11,7 @@ from .converter import MarkdownConverter
 from .uploader import ImageUploader
 from .utils import (
     natural_sort_key, safe_extract_zip, validate_file_size,
-    MAX_TEXT_SIZE, MAX_IMAGES_PER_PAGE, MAX_PAGES, MAX_TOTAL_IMAGES, MAX_FILE_SIZE,
+    MAX_TEXT_SIZE, MAX_IMAGES_PER_PAGE,
     ALLOWED_TEXT_EXTENSIONS, ALLOWED_ARCHIVE_EXTENSIONS, ALLOWED_IMAGE_EXTENSIONS
 )
 from .exceptions import UploadError, ValidationError
@@ -77,14 +77,6 @@ class TelegraphPublisher(IPublisher):
         if not title:
             title = os.path.splitext(file_name)[0]
         ext = os.path.splitext(file_name)[1].lower()
-        
-        # Validate file size
-        file_size = os.path.getsize(file_path)
-        if file_size > MAX_FILE_SIZE:
-            raise ValidationError(
-                f"File too large: {file_size / 1024 / 1024:.1f}MB. "
-                f"Maximum allowed: {MAX_FILE_SIZE / 1024 / 1024:.0f}MB"
-            )
         
         # Validate file type and route to appropriate handler
         if ext in ALLOWED_ARCHIVE_EXTENSIONS:
@@ -437,3 +429,60 @@ class TelegraphPublisher(IPublisher):
             self._link_pages(pages_info)
 
             return pages_info[0]['url'] if pages_info else ""
+
+    def publish_optimized_gallery(self, image_urls: List[str], title: str) -> str:
+        """
+        Publish a gallery using existing image URLs (no upload needed).
+        Handles pagination and navigation linking automatically.
+        """
+        if not image_urls:
+            raise ValidationError("No image URLs provided")
+            
+        # Enforce image limit
+        if len(image_urls) > MAX_TOTAL_IMAGES:
+            print(f"Warning: Gallery truncated from {len(image_urls)} to {MAX_TOTAL_IMAGES} images (max limit).")
+            image_urls = image_urls[:MAX_TOTAL_IMAGES]
+        
+        # Pagination logic
+        chunk_size = MAX_IMAGES_PER_PAGE
+        chunks = [image_urls[i:i + chunk_size] for i in range(0, len(image_urls), chunk_size)]
+        total_parts = len(chunks)
+        
+        if total_parts > 1:
+            print(f"Gallery has {len(image_urls)} images. Splitting into {total_parts} pages.")
+        
+        # Two-pass approach to support Prev/Next links
+        pages_info = [] 
+        
+        for i, chunk_urls in enumerate(chunks):
+            part_num = i + 1
+            page_title = title
+            if total_parts > 1:
+                page_title = f"{title} ({part_num}/{total_parts})"
+            
+            print(f"Creating Part {part_num}/{total_parts} ({len(chunk_urls)} images)...")
+            
+            content = []
+            for url in chunk_urls:
+                content.append({'tag': 'img', 'attrs': {'src': url}})
+            
+            try:
+                # Create initial page
+                response = self.client.create_page(
+                    title=page_title,
+                    html_content=None,
+                    content=content if content else [{'tag': 'p', 'children': ['(Empty Page)']}]
+                )
+                pages_info.append({
+                    'path': response['path'],
+                    'url': response['url'],
+                    'title': page_title,
+                    'content': content
+                })
+            except Exception as e:
+                raise RuntimeError(f"Failed to publish Part {part_num}: {e}")
+
+        # Link pages
+        self._link_pages(pages_info)
+
+        return pages_info[0]['url'] if pages_info else ""
