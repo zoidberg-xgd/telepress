@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="telepress",
-    version="0.1.1",
+    version="0.2.1",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     install_requires=[
@@ -31,7 +31,7 @@ setup(
     },
     author="zoidberg-xgd",
     author_email="",
-    description="Publish Markdown, images and zip archives to Telegraph",
+    description="Publish Markdown to Telegraph with external image hosting support",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     python_requires=">=3.7",
@@ -52,5 +52,5 @@ setup(
         "Bug Reports": "https://github.com/zoidberg-xgd/telepress/issues",
         "Source": "https://github.com/zoidberg-xgd/telepress",
     },
-    keywords=["telegraph", "markdown", "publishing", "gallery"],
+    keywords=["telegraph", "markdown", "publishing", "image-hosting", "imgbb", "imgur", "r2"],
 )

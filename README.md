@@ -1,6 +1,6 @@
 # TelePress
 
-[中文文档](README_CN.md)
+[中文文档](https://github.com/zoidberg-xgd/telepress/blob/master/README_CN.md)
 
 Publish Markdown, images and zip archives to [Telegraph](https://telegra.ph). Handles large files by auto-splitting into multiple linked pages.
 
