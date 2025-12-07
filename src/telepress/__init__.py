@@ -15,7 +15,7 @@ Basic usage:
 
 from .core import TelegraphPublisher
 from .uploader import ImageUploader, UploadResult, BatchUploadResult
-from .image_host import ImageHost, create_image_host, ImgbbHost, ImgurHost, SmmsHost, R2Host, CustomHost
+from .image_host import ImageHost, create_image_host, ImgbbHost, ImgurHost, SmmsHost, R2Host, S3Host, CustomHost
 from .config import load_config, get_image_host_config
 from .exceptions import (
     TelePressError,
@@ -50,6 +50,7 @@ __all__ = [
     'ImgurHost', 
     'SmmsHost',
     'R2Host',
+    'S3Host',
     'CustomHost',
     
     # Config

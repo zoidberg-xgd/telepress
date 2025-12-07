@@ -8,7 +8,7 @@ import json
 from unittest.mock import patch, MagicMock, Mock
 
 from telepress.image_host import (
-    ImageHost, ImgbbHost, ImgurHost, SmmsHost, R2Host, CustomHost,
+    ImageHost, ImgbbHost, ImgurHost, SmmsHost, R2Host, S3Host, CustomHost,
     create_image_host, IMAGE_HOSTS
 )
 from telepress.exceptions import UploadError
@@ -176,40 +176,53 @@ class TestSmmsHost(unittest.TestCase):
             os.unlink(tmp_path)
 
 
-class TestR2Host(unittest.TestCase):
-    """Tests for R2Host."""
+class TestS3Host(unittest.TestCase):
+    """Tests for S3Host."""
     
     def test_init_requires_credentials(self):
-        """Test that R2Host requires necessary credentials."""
+        """Test that S3Host requires necessary credentials."""
         with self.assertRaises(ValueError) as ctx:
-            R2Host(access_key_id='', secret_access_key='', bucket='', public_url='')
-        self.assertIn('R2/S3 requires', str(ctx.exception))
+            S3Host(access_key_id='', secret_access_key='', bucket='', public_url='')
+        self.assertIn('S3 requires', str(ctx.exception))
     
     def test_init_success(self):
         """Test successful initialization."""
+        host = S3Host(
+            access_key_id='key123',
+            secret_access_key='secret123',
+            bucket='my-bucket',
+            public_url='https://s3.example.com',
+            endpoint_url='https://endpoint'
+        )
+        self.assertEqual(host.name, 's3')
+        self.assertEqual(host.bucket, 'my-bucket')
+        self.assertEqual(host.public_url, 'https://s3.example.com')
+    
+    def test_r2_alias(self):
+        """Test R2Host alias."""
         host = R2Host(
             account_id='acc123',
             access_key_id='key123',
             secret_access_key='secret123',
             bucket='my-bucket',
-            public_url='https://pub-xxx.r2.dev'
+            public_url='https://pub.r2.dev'
         )
         self.assertEqual(host.name, 'r2')
-        self.assertEqual(host.bucket, 'my-bucket')
-        self.assertEqual(host.public_url, 'https://pub-xxx.r2.dev')
-    
+        self.assertEqual(host.endpoint_url, 'https://acc123.r2.cloudflarestorage.com')
+
     def test_public_url_trailing_slash_removed(self):
         """Test that trailing slash is removed from public_url."""
-        host = R2Host(
+        host = S3Host(
             access_key_id='key123',
             secret_access_key='secret123',
             bucket='my-bucket',
-            public_url='https://pub-xxx.r2.dev/'
+            public_url='https://s3.example.com/',
+            endpoint_url='https://endpoint'
         )
-        self.assertEqual(host.public_url, 'https://pub-xxx.r2.dev')
+        self.assertEqual(host.public_url, 'https://s3.example.com')
     
     def test_upload_success(self):
-        """Test successful upload to R2 (requires boto3)."""
+        """Test successful upload to S3 (requires boto3)."""
         try:
             import boto3
         except ImportError:
@@ -225,16 +238,16 @@ class TestR2Host(unittest.TestCase):
                 tmp_path = f.name
             
             try:
-                host = R2Host(
-                    account_id='acc123',
+                host = S3Host(
                     access_key_id='key123',
                     secret_access_key='secret123',
                     bucket='my-bucket',
-                    public_url='https://pub-xxx.r2.dev'
+                    public_url='https://s3.example.com',
+                    endpoint_url='https://endpoint'
                 )
                 url = host.upload(tmp_path)
                 
-                self.assertTrue(url.startswith('https://pub-xxx.r2.dev/'))
+                self.assertTrue(url.startswith('https://s3.example.com/'))
                 self.assertTrue(url.endswith('.jpg'))
                 mock_client.upload_fileobj.assert_called_once()
             finally:
@@ -412,15 +425,29 @@ class TestCreateImageHost(unittest.TestCase):
         host = create_image_host('smms', api_token='test_token')
         self.assertIsInstance(host, SmmsHost)
     
+    def test_create_s3(self):
+        """Test creating s3 host."""
+        host = create_image_host('s3',
+            access_key_id='key',
+            secret_access_key='secret',
+            bucket='bucket',
+            public_url='https://s3.example.com',
+            endpoint_url='https://endpoint'
+        )
+        self.assertIsInstance(host, S3Host)
+        self.assertEqual(host.name, 's3')
+
     def test_create_r2(self):
         """Test creating r2 host."""
         host = create_image_host('r2',
+            account_id='acc123',
             access_key_id='key',
             secret_access_key='secret',
             bucket='bucket',
             public_url='https://example.com'
         )
         self.assertIsInstance(host, R2Host)
+        self.assertEqual(host.name, 'r2')
     
     def test_create_custom(self):
         """Test creating custom host."""
@@ -472,7 +499,7 @@ class TestImageHostsRegistry(unittest.TestCase):
     
     def test_all_hosts_registered(self):
         """Test that all expected hosts are registered."""
-        expected = {'imgbb', 'imgur', 'smms', 'r2', 'custom'}
+        expected = {'imgbb', 'imgur', 'smms', 'r2', 's3', 'custom'}
         self.assertEqual(set(IMAGE_HOSTS.keys()), expected)
     
     def test_all_hosts_are_image_host_subclass(self):

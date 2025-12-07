@@ -19,17 +19,14 @@ cd telepress && pip install -e .
 
 ## 用法
 
-```python
-from telepress import publish, publish_text
-
-url = publish("article.md")
-url = publish_text("# 标题\n\n正文", title="测试")
+CLI 配置向导:
+```bash
+telepress configure
 ```
 
-命令行:
+发布内容:
 ```bash
 telepress article.md --title "我的文章"
-telepress photos.zip --title "相册"
 ```
 
 REST API:
@@ -64,21 +61,27 @@ curl -X POST localhost:8000/publish/text \
 
 ## 图片上传
 
-支持图床: **imgbb**, **imgur**, **sm.ms**, **Cloudflare R2**, **自定义 API**
+支持图床: **imgbb**, **imgur**, **sm.ms**, **S3/R2/OSS**, **自定义 API**
 
-### 配置文件
+### 配置
 
-创建 `~/.telepress.json`:
+使用配置向导:
+```bash
+telepress configure
+```
+
+或者手动创建 `~/.telepress.json`:
 
 ```json
 {
     "image_host": {
-        "type": "r2",
-        "account_id": "your_account_id",
+        "type": "s3",
         "access_key_id": "your_access_key",
         "secret_access_key": "your_secret_key",
         "bucket": "your_bucket",
-        "public_url": "https://pub-xxx.r2.dev"
+        "public_url": "https://your-bucket.s3.amazonaws.com",
+        "endpoint_url": "https://s3.us-west-1.amazonaws.com",
+        "region_name": "us-west-1"
     }
 }
 ```

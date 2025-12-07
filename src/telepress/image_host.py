@@ -148,61 +148,63 @@ class SmmsHost(ImageHost):
         return data['data']['url']
 
 
-class R2Host(ImageHost):
+class S3Host(ImageHost):
     """
-    Cloudflare R2 / S3-compatible storage.
+    S3-compatible storage (AWS S3, Cloudflare R2, Aliyun OSS, MinIO, etc).
     
     Requires:
-    - account_id: Cloudflare account ID (or S3 endpoint for other providers)
     - access_key_id: Access key ID
     - secret_access_key: Secret access key
     - bucket: Bucket name
     - public_url: Public URL prefix for the bucket
-    - endpoint_url: Optional custom endpoint URL (for non-R2 S3-compatible storage)
+    - endpoint_url: Optional endpoint URL (required for non-AWS providers like R2/OSS/MinIO)
+    - region_name: Optional region name (default: auto)
     """
     
     def __init__(
         self,
-        account_id: str = None,
-        access_key_id: str = None,
-        secret_access_key: str = None,
-        bucket: str = None,
-        public_url: str = None,
-        endpoint_url: str = None
+        access_key_id: str,
+        secret_access_key: str,
+        bucket: str,
+        public_url: str,
+        endpoint_url: Optional[str] = None,
+        region_name: str = 'auto',
+        account_id: Optional[str] = None  # Kept for R2 convenience
     ):
         if not all([access_key_id, secret_access_key, bucket, public_url]):
             raise ValueError(
-                "R2/S3 requires: access_key_id, secret_access_key, bucket, public_url"
+                "S3 requires: access_key_id, secret_access_key, bucket, public_url"
             )
-        self.account_id = account_id
         self.access_key_id = access_key_id
         self.secret_access_key = secret_access_key
         self.bucket = bucket
         self.public_url = public_url.rstrip('/')
         self.endpoint_url = endpoint_url
+        self.region_name = region_name
+        self.account_id = account_id
         self._client = None
+        
+        # Auto-construct R2 endpoint if account_id provided but no endpoint
+        if not self.endpoint_url and self.account_id:
+            self.endpoint_url = f'https://{self.account_id}.r2.cloudflarestorage.com'
     
     @property
     def name(self) -> str:
-        return "r2"
+        return "s3"
     
     def _get_client(self):
         if self._client is None:
             try:
                 import boto3
             except ImportError:
-                raise ImportError("boto3 is required for R2/S3 support. Install with: pip install boto3")
-            
-            endpoint = self.endpoint_url
-            if not endpoint and self.account_id:
-                endpoint = f'https://{self.account_id}.r2.cloudflarestorage.com'
+                raise ImportError("boto3 is required for S3 support. Install with: pip install boto3")
             
             self._client = boto3.client(
                 's3',
-                endpoint_url=endpoint,
+                endpoint_url=self.endpoint_url,
                 aws_access_key_id=self.access_key_id,
                 aws_secret_access_key=self.secret_access_key,
-                region_name='auto'
+                region_name=self.region_name
             )
         return self._client
     
@@ -229,6 +231,14 @@ class R2Host(ImageHost):
             )
         
         return f"{self.public_url}/{filename}"
+
+
+class R2Host(S3Host):
+    """Cloudflare R2 image hosting (alias for S3Host with R2 defaults)."""
+    
+    @property
+    def name(self) -> str:
+        return "r2"
 
 
 class CustomHost(ImageHost):
@@ -322,6 +332,7 @@ IMAGE_HOSTS = {
     'imgbb': ImgbbHost,
     'imgur': ImgurHost,
     'smms': SmmsHost,
+    's3': S3Host,
     'r2': R2Host,
     'custom': CustomHost,
 }
@@ -334,7 +345,7 @@ def create_image_host(host_name: str = None, **kwargs) -> ImageHost:
     If no host_name is provided, loads from config file or environment.
     
     Args:
-        host_name: Name of the host ('imgbb', 'imgur', 'smms', 'r2', 'custom')
+        host_name: Name of the host ('imgbb', 'imgur', 'smms', 's3', 'r2', 'custom')
                    If None, loads from ~/.telepress.json or TELEPRESS_* env vars
         **kwargs: Host-specific configuration (api_key, client_id, etc.)
     

@@ -103,13 +103,14 @@ class TestCLI(unittest.TestCase):
 
 class TestCLIArgumentParser(unittest.TestCase):
     def test_cli_no_args_shows_help(self):
-        """Test that no arguments shows error."""
+        """Test that no arguments shows help without error code."""
         with patch.object(sys, 'argv', ['telepress']):
-            with patch('sys.stderr', new_callable=io.StringIO):
-                with self.assertRaises(SystemExit) as ctx:
-                    main()
-        
-        self.assertEqual(ctx.exception.code, 2)  # argparse error code
+            with patch('sys.stdout', new_callable=io.StringIO) as mock_stdout:
+                main()
+                output = mock_stdout.getvalue()
+                self.assertIn('TelePress', output)
+                self.assertIn('configure', output)
+                self.assertIn('publish', output)
 
     def test_cli_help_option(self):
         """Test --help option."""
@@ -121,8 +122,8 @@ class TestCLIArgumentParser(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 0)
         output = mock_stdout.getvalue()
         self.assertIn('TelePress', output)
-        self.assertIn('--title', output)
-        self.assertIn('--token', output)
+        self.assertIn('configure', output)
+        self.assertIn('publish', output)
 
 
 class TestCLIOutput(unittest.TestCase):

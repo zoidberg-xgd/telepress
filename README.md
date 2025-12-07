@@ -19,14 +19,12 @@ cd telepress && pip install -e .
 
 ## Usage
 
-```python
-from telepress import publish, publish_text
-
-url = publish("article.md")
-url = publish_text("# Hello\n\nWorld!", title="Test")
+CLI Configuration Wizard:
+```bash
+telepress configure
 ```
 
-CLI:
+Publishing:
 ```bash
 telepress article.md --title "My Post"
 telepress photos.zip --title "Album"
@@ -64,21 +62,27 @@ Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
 
 ## Image Upload
 
-Supported hosts: **imgbb**, **imgur**, **sm.ms**, **Cloudflare R2**, **Custom API**
+Supported hosts: **imgbb**, **imgur**, **sm.ms**, **S3/R2/OSS**, **Custom API**
 
-### Configuration File
+### Configuration
 
-Create `~/.telepress.json`:
+Use the wizard:
+```bash
+telepress configure
+```
+
+Or create `~/.telepress.json` manually:
 
 ```json
 {
     "image_host": {
-        "type": "r2",
-        "account_id": "your_account_id",
+        "type": "s3",
         "access_key_id": "your_access_key",
         "secret_access_key": "your_secret_key",
         "bucket": "your_bucket",
-        "public_url": "https://pub-xxx.r2.dev"
+        "public_url": "https://your-bucket.s3.amazonaws.com",
+        "endpoint_url": "https://s3.us-west-1.amazonaws.com",
+        "region_name": "us-west-1"
     }
 }
 ```
