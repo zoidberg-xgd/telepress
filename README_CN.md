@@ -49,25 +49,97 @@ curl -X POST localhost:8000/publish/text \
 
 ## 特性
 
-- **去重**: 相同内容不会重复上传（缓存在 `~/.telepress_cache.json`）
+- **外部图床**: 支持 imgbb、imgur、sm.ms、Cloudflare R2
+- **自动压缩**: 超过 5MB 的图片自动压缩
+- **批量上传**: 多线程并发上传，带进度回调
+- **去重**: 相同内容不会重复上传
 - **自动分页**: 大内容自动分割成多个链接页面
-- **保留段落**: 纯文本的换行会变成段落
 
 ## 限制
 
-- **注意**: Telegraph 图片上传 API 目前不可用。图片需要先上传到外部图床，然后在文章中粘贴 URL。
+- Telegraph 直接上传不可用，改用外部图床
+- 单张图片 5MB（超过自动压缩）
 
-支持: `.txt` `.md` `.markdown` `.rst`
+支持: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
 
-不支持: 图片直接上传、PDF、DOCX
+## 图片上传
+
+支持图床: **imgbb**, **imgur**, **sm.ms**, **Cloudflare R2**, **自定义 API**
+
+### 配置文件
+
+创建 `~/.telepress.json`:
+
+```json
+{
+    "image_host": {
+        "type": "r2",
+        "account_id": "your_account_id",
+        "access_key_id": "your_access_key",
+        "secret_access_key": "your_secret_key",
+        "bucket": "your_bucket",
+        "public_url": "https://pub-xxx.r2.dev"
+    }
+}
+```
+
+或者使用环境变量:
+```bash
+export TELEPRESS_IMAGE_HOST_TYPE=r2
+export TELEPRESS_IMAGE_HOST_ACCESS_KEY_ID=xxx
+export TELEPRESS_IMAGE_HOST_SECRET_ACCESS_KEY=xxx
+export TELEPRESS_IMAGE_HOST_BUCKET=my-bucket
+export TELEPRESS_IMAGE_HOST_PUBLIC_URL=https://pub-xxx.r2.dev
+```
+
+### 使用
+
+```python
+from telepress import ImageUploader
+
+# 从配置文件加载
+uploader = ImageUploader()  # 自动读取 ~/.telepress.json
+
+# 或者显式指定
+uploader = ImageUploader('imgbb', api_key='your_key')
+uploader = ImageUploader('r2', access_key_id='...', secret_access_key='...', bucket='...', public_url='...')
+
+# 自定义 API
+uploader = ImageUploader('custom',
+    upload_url='https://your-api.com/upload',
+    headers={'Authorization': 'Bearer xxx'},
+    response_url_path='data.url'  # 响应中 URL 的 JSON 路径
+)
+
+# 上传
+url = uploader.upload('photo.jpg')
+
+# 批量上传
+results = uploader.upload_batch(image_paths)
+print(f"成功率: {results.success_rate:.0%}")
+```
+
+## 图片压缩
+
+```python
+from telepress import compress_image_to_size, MAX_IMAGE_SIZE
+
+# 压缩到 5MB 以下
+compressed_path, was_compressed = compress_image_to_size(
+    "large_photo.png",
+    max_size=MAX_IMAGE_SIZE,
+    prefer_webp=False  # True 输出 WebP
+)
+```
 
 ## 项目结构
 
 ```
 telepress/
 ├── core.py       # TelegraphPublisher 主类
-├── auth.py       # token 管理
-├── converter.py  # markdown 转 telegraph 节点
+├── image_host.py # 外部图床 (imgbb, imgur, smms)
+├── uploader.py   # ImageUploader 批量上传
+├── utils.py      # 压缩工具
 ├── server.py     # FastAPI 服务
 └── cli.py        # 命令行
 ```

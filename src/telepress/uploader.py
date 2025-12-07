@@ -1,31 +1,18 @@
 """
-Image Uploader Module (DEPRECATED)
+Image Uploader Module
 
-Note: Telegraph's /upload API is currently returning "Unknown error" for all uploads.
-This module is kept for reference but image upload functionality is not available.
-Use external image hosting services instead.
+Uses external image hosting services (imgbb, imgur, sm.ms) since
+Telegraph's /upload API is currently unavailable.
 """
 import os
 import time
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, List, Dict, Callable, Any
+from typing import Optional, List, Dict, Callable, Any, Union
 from dataclasses import dataclass, field
-from .exceptions import UploadError, DependencyError
-from .utils import validate_file_size, compress_image_to_size, MAX_IMAGE_SIZE
-
-# Telegraph upload API is currently broken
-_UPLOAD_DISABLED = True
-_UPLOAD_ERROR_MSG = (
-    "Telegraph image upload is currently unavailable (API returns 'Unknown error'). "
-    "Please use external image hosting services (e.g., imgbb.com, imgur.com) "
-    "and paste image URLs into your Telegraph article."
-)
-
-try:
-    from telegraph import upload_file
-except ImportError:
-    upload_file = None
+from .exceptions import UploadError
+from .utils import compress_image_to_size, MAX_IMAGE_SIZE
+from .image_host import ImageHost, create_image_host
 
 
 @dataclass
@@ -61,22 +48,47 @@ class BatchUploadResult:
 
 
 class ImageUploader:
-    """Thread-safe image uploader with compression, retry and batch support."""
+    """
+    Thread-safe image uploader with compression, retry and batch support.
+    
+    Uses external image hosting services (imgbb, imgur, sm.ms) since
+    Telegraph's upload API is currently unavailable.
+    
+    Example:
+        >>> uploader = ImageUploader('imgbb', api_key='your_key')
+        >>> url = uploader.upload('image.jpg')
+        >>> print(url)  # https://i.ibb.co/xxx/image.jpg
+    """
     
     # Supported formats for compression
     COMPRESSIBLE_FORMATS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'}
-    # GIF needs special handling (animated)
     SKIP_COMPRESSION_FORMATS = {'.gif'}
     
-    def __init__(self, max_workers: int = 4):
+    def __init__(
+        self, 
+        host: Union[str, ImageHost, None] = None,
+        max_workers: int = 4,
+        **host_config
+    ):
         """
-        Initialize uploader.
+        Initialize uploader with an image host.
         
         Args:
+            host: Image host name ('imgbb', 'imgur', 'smms', 'r2', 'custom'),
+                  ImageHost instance, or None to load from config
             max_workers: Maximum concurrent uploads for batch operations (default: 4)
+            **host_config: Host-specific config (api_key, client_id, etc.)
+        
+        Examples:
+            >>> ImageUploader()  # Load from ~/.telepress.json or env vars
+            >>> ImageUploader('imgbb', api_key='your_key')
+            >>> ImageUploader('r2', access_key_id='...', ...)
+            >>> ImageUploader('custom', upload_url='https://...', response_url_path='data.url')
         """
-        if upload_file is None:
-            raise DependencyError("telegraph library is required")
+        if isinstance(host, ImageHost):
+            self.host = host
+        else:
+            self.host = create_image_host(host, **host_config)
         self.max_workers = max_workers
 
     def upload(
@@ -84,32 +96,28 @@ class ImageUploader:
         path: str, 
         retries: int = 3, 
         auto_compress: bool = True,
+        max_size: int = MAX_IMAGE_SIZE,
         retry_delay: float = 1.0,
         max_retry_delay: float = 30.0
     ) -> str:
         """
-        Upload a single image to Telegraph with auto-compression and retry.
+        Upload a single image with auto-compression and retry.
         
         Args:
             path: Path to the image file
             retries: Number of retry attempts (default: 3)
-            auto_compress: Auto-compress images over 5MB (default: True)
+            auto_compress: Auto-compress large images (default: True)
+            max_size: Max size in bytes before compression (default: 5MB)
             retry_delay: Initial delay between retries in seconds (default: 1.0)
             max_retry_delay: Maximum retry delay with exponential backoff (default: 30.0)
         
         Returns:
-            str: Telegraph URL of the uploaded image
+            str: URL of the uploaded image
         
         Raises:
             FileNotFoundError: If file doesn't exist
             UploadError: If upload fails after all retries
-        
-        Note:
-            Telegraph upload API is currently broken. This method will raise UploadError.
         """
-        if _UPLOAD_DISABLED:
-            raise UploadError(_UPLOAD_ERROR_MSG)
-        
         if not os.path.exists(path):
             raise FileNotFoundError(f"Image not found: {path}")
         
@@ -118,9 +126,7 @@ class ImageUploader:
         
         try:
             if auto_compress:
-                upload_path, compressed = compress_image_to_size(path, MAX_IMAGE_SIZE)
-            else:
-                validate_file_size(path, MAX_IMAGE_SIZE, "Image file too large")
+                upload_path, compressed = compress_image_to_size(path, max_size)
 
             return self._upload_with_retry(
                 upload_path, path, retries, retry_delay, max_retry_delay
@@ -147,14 +153,7 @@ class ImageUploader:
         
         for attempt in range(retries):
             try:
-                with open(upload_path, 'rb') as f:
-                    response = upload_file(f)
-                
-                if isinstance(response, list) and len(response) > 0 and 'src' in response[0]:
-                    return "https://telegra.ph" + response[0]['src']
-                
-                raise UploadError(f"Invalid response: {response}")
-                
+                return self.host.upload(upload_path)
             except Exception as e:
                 last_error = e
                 if attempt < retries - 1:

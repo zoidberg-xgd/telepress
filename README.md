@@ -49,27 +49,99 @@ Token is auto-created on first run and saved to `~/.telegraph_token`.
 
 ## Features
 
-- **Deduplication**: Same content won't be uploaded twice (cache in `~/.telepress_cache.json`)
+- **External image hosting**: Upload to imgbb, imgur, or sm.ms (configurable)
+- **Auto compression**: Images over 5MB automatically compressed
+- **Batch upload**: Multi-threaded concurrent uploads with progress callback
+- **Deduplication**: Same content won't be uploaded twice
 - **Auto-pagination**: Large content split into multiple linked pages
-- **Paragraph preservation**: Plain text line breaks become paragraphs
 
 ## Limits
 
-- **Note**: Telegraph's image upload API is currently unavailable. Images must be hosted externally and URLs pasted into articles.
+- Telegraph's direct image upload is unavailable, using external image hosts instead
+- 5MB per image (auto-compressed if larger)
 
-Supported: `.txt` `.md` `.markdown` `.rst`
+Supported: `.txt` `.md` `.markdown` `.rst` `.jpg` `.png` `.gif` `.webp` `.zip`
 
-Not supported: Direct image upload, PDF, DOCX
+## Image Upload
+
+Supported hosts: **imgbb**, **imgur**, **sm.ms**, **Cloudflare R2**, **Custom API**
+
+### Configuration File
+
+Create `~/.telepress.json`:
+
+```json
+{
+    "image_host": {
+        "type": "r2",
+        "account_id": "your_account_id",
+        "access_key_id": "your_access_key",
+        "secret_access_key": "your_secret_key",
+        "bucket": "your_bucket",
+        "public_url": "https://pub-xxx.r2.dev"
+    }
+}
+```
+
+Or use environment variables:
+```bash
+export TELEPRESS_IMAGE_HOST_TYPE=r2
+export TELEPRESS_IMAGE_HOST_ACCESS_KEY_ID=xxx
+export TELEPRESS_IMAGE_HOST_SECRET_ACCESS_KEY=xxx
+export TELEPRESS_IMAGE_HOST_BUCKET=my-bucket
+export TELEPRESS_IMAGE_HOST_PUBLIC_URL=https://pub-xxx.r2.dev
+```
+
+### Usage
+
+```python
+from telepress import ImageUploader
+
+# Load from config file or env vars
+uploader = ImageUploader()  # Auto-loads from ~/.telepress.json
+
+# Or specify explicitly
+uploader = ImageUploader('imgbb', api_key='your_key')
+uploader = ImageUploader('r2', access_key_id='...', secret_access_key='...', bucket='...', public_url='...')
+
+# Custom API endpoint
+uploader = ImageUploader('custom',
+    upload_url='https://your-api.com/upload',
+    headers={'Authorization': 'Bearer xxx'},
+    response_url_path='data.url'  # JSON path to URL in response
+)
+
+# Upload
+url = uploader.upload('photo.jpg')
+
+# Batch upload
+results = uploader.upload_batch(image_paths)
+print(f"Success: {results.success_rate:.0%}")
+```
+
+## Image Compression
+
+```python
+from telepress import compress_image_to_size, MAX_IMAGE_SIZE
+
+# Compress to under 5MB
+compressed_path, was_compressed = compress_image_to_size(
+    "large_photo.png",
+    max_size=MAX_IMAGE_SIZE,
+    prefer_webp=False  # True for WebP output
+)
+```
 
 ## Project structure
 
 ```
 telepress/
 ├── core.py       # TelegraphPublisher
-├── auth.py       # token management
-├── converter.py  # markdown to telegraph nodes
+├── image_host.py # External image hosting (imgbb, imgur, smms)
+├── uploader.py   # ImageUploader with batch support
+├── utils.py      # Compression utilities
 ├── server.py     # FastAPI service
-└── cli.py        # command line
+└── cli.py        # Command line
 ```
 
 ## Error handling
