@@ -7,6 +7,11 @@ import zipfile
 import json
 import hashlib
 from typing import Optional, List, Dict
+try:
+    from telegraph.api import TelegraphApi
+except ImportError:
+    TelegraphApi = None
+
 from .auth import TelegraphAuth
 from .config import load_config
 from .converter import MarkdownConverter
@@ -45,6 +50,50 @@ def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
 
 
+def _patch_telegraph_api(api_url: str):
+    """Monkey patch TelegraphApi to support custom base URL."""
+    if not TelegraphApi or not api_url:
+        return
+        
+    # Store original methods if not already stored
+    if not hasattr(TelegraphApi, '_original_init'):
+        TelegraphApi._original_init = TelegraphApi.__init__
+        TelegraphApi._original_method = TelegraphApi.method
+
+    # Note: TelegraphApi uses __slots__, so we cannot attach new attributes to self.
+    # We use the closure variable 'api_url' directly.
+    # This means the patch is global for the process life-time (or until patched again).
+
+    def patched_method(self, method, values=None, path=''):
+        values = values.copy() if values is not None else {}
+
+        if 'access_token' not in values and self.access_token:
+            values['access_token'] = self.access_token
+
+        # Use custom API URL from closure
+        base_url = api_url.rstrip('/')
+        url = f'{base_url}/{method}'
+        if path:
+             url = f'{base_url}/{method}/{path}'
+             
+        response = self.session.post(url, data=values).json()
+
+        if response.get('ok'):
+            return response['result']
+
+        error = response.get('error')
+        if isinstance(error, str) and error.startswith('FLOOD_WAIT_'):
+            from telegraph.exceptions import RetryAfterError
+            retry_after = int(error.rsplit('_', 1)[-1])
+            raise RetryAfterError(retry_after)
+        else:
+            from telegraph.exceptions import TelegraphException
+            raise TelegraphException(error)
+
+    # We don't need to patch __init__ anymore
+    TelegraphApi.method = patched_method
+
+
 class TelegraphPublisher(IPublisher):
     """
     Main interface for publishing content to Telegraph.
@@ -57,8 +106,12 @@ class TelegraphPublisher(IPublisher):
         short_name: str = "TelegraphPublisher", 
         skip_duplicate: bool = True,
         image_size_limit: Optional[float] = None,
-        auto_compress: bool = True
+        auto_compress: bool = True,
+        api_url: Optional[str] = None
     ):
+        if api_url:
+            _patch_telegraph_api(api_url)
+
         self.auth = TelegraphAuth()
         self.client = self.auth.get_client(token, short_name)
         self.converter = MarkdownConverter()

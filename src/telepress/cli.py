@@ -213,7 +213,8 @@ def handle_publish(args):
         publisher = TelegraphPublisher(
             token=args.token, 
             image_size_limit=args.image_size_limit,
-            auto_compress=not args.no_compress
+            auto_compress=not args.no_compress,
+            api_url=getattr(args, 'api_url', None)
         )
         url = publisher.publish(args.file, title=args.title)
         print(f"\n✅ Success! Page created: {url}")
@@ -235,6 +236,7 @@ def main():
         parser.add_argument("--token", help="Telegraph access token (optional)", default=None)
         parser.add_argument("--image-size-limit", type=float, help="Max image size in MB (default: 5)", default=None)
         parser.add_argument("--no-compress", action="store_true", help="Disable automatic image compression")
+        parser.add_argument("--api-url", help="Custom API URL (e.g. http://localhost:9009)", default=None)
         args = parser.parse_args()
         handle_publish(args)
         return
@@ -258,6 +260,7 @@ def main():
     publish_parser.add_argument("--token", help="Telegraph access token (optional)", default=None)
     publish_parser.add_argument("--image-size-limit", type=float, help="Max image size in MB (default: 5)", default=None)
     publish_parser.add_argument("--no-compress", action="store_true", help="Disable automatic image compression")
+    publish_parser.add_argument("--api-url", help="Custom API URL (e.g. http://localhost:9009)", default=None)
 
     args = parser.parse_args()
     
