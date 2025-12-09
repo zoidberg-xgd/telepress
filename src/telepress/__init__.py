@@ -35,7 +35,7 @@ from .utils import (
     compress_image_to_size
 )
 
-__version__ = "0.2.4"
+__version__ = "0.3.5"
 __all__ = [
     # Main classes
     'TelegraphPublisher',
